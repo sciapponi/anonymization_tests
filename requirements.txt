@@ -1,0 +1,7 @@
+lightning
+soundstream
+speechbrain
+torch
+torchaudio
+wandb
+torchmetrics
