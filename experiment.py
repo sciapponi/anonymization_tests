@@ -1,6 +1,7 @@
 import lightning as L
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch import Trainer
+from lightning.pytorch.utilities.types import EVAL_DATALOADERS
 import soundstream
 import torch 
 from torch import nn
@@ -11,6 +12,7 @@ import wandb
 from torchaudio import datasets
 from discriminators import WaveDiscriminator, STFTDiscriminator
 from losses import ReconstructionLoss
+from torchmetrics.audio import PerceptualEvaluationSpeechQuality as PESQ
 
 class Experiment(L.LightningModule):
 
@@ -47,6 +49,20 @@ class Experiment(L.LightningModule):
         self.rec_loss = ReconstructionLoss()
         self.stft_discriminator = STFTDiscriminator()
 
+        #PESQ
+        self.pesq = PESQ(16000, 'wb')
+
+        # VALIDATION OUTPUTS
+
+        self.validation_step_outputs = self.reset_valid_outputs()
+
+    def reset_valid_outputs(self):
+        return {"pesq": [], 
+                "x_vector_loss": [], 
+                "kd_loss": [], 
+                "input":[], 
+                "output":[]}
+    
     # OPTIMIZERS
     def configure_optimizers(self):
         lr = self.hparams.lr
@@ -69,16 +85,16 @@ class Experiment(L.LightningModule):
     
     def forward(self, audio_input):
         #SOUNDSTREAM
-        x = self.encoder(audio_input)
-        quantized, _, _ = self.quantizer(x.permute(0,2,1))
+        encoded = self.encoder(audio_input)
+        quantized, _, _ = self.quantizer(encoded.permute(0,2,1))
         audio_output = self.decoder(quantized.permute(0,2,1))
 
-        return audio_output, quantized
+        return audio_output, encoded
     
     # LOSSES
     def distillation_loss(self, z, audio_input):
 
-        # Distillation loss: makes the SoundStream (quantized) Embedding space have hubert-like soft-speech rapresentations.
+        # Distillation loss: makes the SoundStream Embedding space have hubert-like soft-speech rapresentations.
 
         hubert_features = self.hubert(audio_input)
         loss_distill = (z - F.interpolate(hubert_features, z.shape[2])).abs().mean()
@@ -95,9 +111,9 @@ class Experiment(L.LightningModule):
 
         return nn.CosineSimilarity(y_xvector, y_hat_xvector)
 
-    def compute_loss(self, quantized, y, y_hat):
+    def compute_loss(self, encoded, y, y_hat):
         
-        return self.distillation_loss(quantized, y) - self.x_vector_loss(y, y_hat)
+        return self.distillation_loss(encoded, y) - self.x_vector_loss(y, y_hat)
     
     # TRAINING
     def train_generator(self, input, output):
@@ -159,11 +175,11 @@ class Experiment(L.LightningModule):
         
         ### ENCODER STEP
         self.decoder.requires_grad = False 
-        audio_output, quantized = self(batch)
+        audio_output, encoded = self(batch)
         
         g_loss = self.train_generator(batch, audio_output)
 
-        e_distill_loss = self.distillation_loss(quantized, batch)
+        e_distill_loss = self.distillation_loss(encoded, batch)
         
         e_xvector_loss = self.x_vector_loss(batch, audio_output)
         
@@ -181,11 +197,11 @@ class Experiment(L.LightningModule):
         self.decoder.requires_grad = True
         self.encoder.requires_grad = False 
         self.quantizer.requires_grad = False 
-        audio_output, quantized = self(batch)
+        audio_output, encoded = self(batch)
 
         g_loss = self.train_generator(batch, audio_output)
 
-        d_distill_loss = self.distillation_loss(quantized, batch)
+        d_distill_loss = self.distillation_loss(encoded, batch)
 
         d_xvector_loss = self.x_vector_loss(batch, audio_output)
 
@@ -202,26 +218,100 @@ class Experiment(L.LightningModule):
 
         ## DISCRIMINATOR STEP
         self.toggle_optimizer(optimizer_d)
-        audio_output, quantized = self(batch)
+        audio_output, encoded = self(batch)
         d_loss = self.train_discriminator(batch, audio_output)
         self.manual_backward(d_loss)
         optimizer_d.step()
         optimizer_d.zero_grad()
         self.untoggle_optimizer(optimizer_d)
 
+    # VALIDATION
+    def validation_step(self, batch, batch_idx ):
+        out, embedded  = self(batch)
 
+        # PESQ
+        pesq_score = 0
+        for ref, deg in zip(batch, out):
+            pesq_score += self.pesq(ref, deg)
+        self.validation_step_outputs["pesq"].append(pesq_score)
+
+        # SIMILARITY LOSS
+        similarity = self.x_vector_loss(batch, out)
+        self.validation_step_outputs["x_vector_loss"].append(similarity)
+
+        # DISTILL LOSS
+        distill = self.distillation_loss(batch, embedded)
+        self.validation_step_outputs["kd_loss"].append(distill)
+
+        #AUDIO
+        self.validation_step_outputs["input"].append(batch)
+        self.validation_step_outputs["output"].append(out)
 
     def on_validation_epoch_end(self):
-        waveform = [[1]]
-        self.logger.experiment.log({"Audio": wandb.Audio(waveform[0][0], sample_rate=16000)})
-        
-    
-        
+        audio_in =  self.validation_step_outputs["input"][0][0]
+        audio_out =  self.validation_step_outputs["output"][0][0]
+        self.logger.experiment.log({"Input Waveform": wandb.Audio(audio_in, sample_rate=16000)})
+        self.logger.experiment.log({"Output Waveform": wandb.Audio(audio_out, sample_rate=16000)})
 
+        pesq = self.validation_step_outputs["pesq"]
+        self.log("val/pesq", torch.sum(pesq)/len(pesq))
+
+        self.validation_step_outputs = self.reset_valid_outputs()
+
+    # DATASET
+    def train_dataloader(self):
+        return self._make_dataloader(True)
+
+    def val_dataloader(self):
+        return self._make_dataloader(False)
+    
+    def _make_dataloader(self, train: bool):
+        import torchaudio
+
+        def collate(examples):
+            return torch.stack(examples)
+
+        class VoiceDataset(torch.utils.data.Dataset):
+            def __init__(self, dataset, sample_rate, segment_length):
+                self._dataset = dataset
+                self._sample_rate = sample_rate
+                self._segment_length = segment_length
+
+            def __getitem__(self, index):
+                import random
+                x, sample_rate, *_ = self._dataset[index]
+                x = torchaudio.functional.resample(x, sample_rate, self._sample_rate)
+                assert x.shape[0] == 1
+                x = torch.squeeze(x)
+                x *= 0.95 / torch.max(x)
+                assert x.dim() == 1
+                if x.shape[0] < self._segment_length:
+                    x = F.pad(x, [0, self._segment_length - x.shape[0]], "constant")
+                pos = random.randint(0, x.shape[0] - self._segment_length)
+                x = x[pos:pos + self._segment_length]
+                return x
+
+            def __len__(self):
+                return len(self._dataset)
+
+        if train:
+            ds = torchaudio.datasets.LIBRITTS("./data", url="train-clean-100", download=True)
+        else:
+            ds = torchaudio.datasets.LIBRITTS("./data", url="test-clean", download=True)
+
+        ds = VoiceDataset(ds, self.hparams.sample_rate, self.hparams.segment_length)
+
+        loader = torch.utils.data.DataLoader(
+            ds, batch_size=self.hparams['batch_size'], shuffle=True,
+            collate_fn=collate)
+        return loader
+    
+    ### CALLBACKS
     def configure_callbacks(self):
         pass
 
-if __name__=="__main__":
+
+def train():
     wandb_logger = WandbLogger(log_model="all")
     trainer = Trainer(logger=wandb_logger)
 
@@ -229,3 +319,7 @@ if __name__=="__main__":
     test_set = datasets.LIBRITTS(root=".", url="test-clean", download=True)
     model = Experiment()
     trainer.fit(model)
+
+
+if __name__=="__main__":
+    train()
