@@ -11,8 +11,12 @@ import wandb
 from torchaudio import datasets
 from discriminators import WaveDiscriminator, STFTDiscriminator
 from losses import ReconstructionLoss
-from torchmetrics.audio import PerceptualEvaluationSpeechQuality as PESQ
+from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 import nemo.collections.asr as nemo_asr
+import os 
+
+if torch.cuda.is_available(): 
+    os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
 class Experiment(L.LightningModule):
 
@@ -31,10 +35,10 @@ class Experiment(L.LightningModule):
 
         # SOUNDSTREAM
         audio_codec = soundstream.from_pretrained()
-
-        self.encoder = audio_codec['encoder']
-        self.quantizer = audio_codec['quantizer']
-        self.decoder = audio_codec['decoder']
+        codec_children = list(audio_codec.children())
+        self.encoder = codec_children[0]
+        self.quantizer = codec_children[1]
+        self.decoder = codec_children[2]
 
         # HUBERT
         self.hubert = torch.hub.load("bshall/hubert:main", "hubert_soft", trust_repo=True)
@@ -50,7 +54,7 @@ class Experiment(L.LightningModule):
         self.stft_discriminator = STFTDiscriminator()
 
         #PESQ
-        self.pesq = PESQ(16000, 'wb')
+        self.pesq = PerceptualEvaluationSpeechQuality(16000, 'wb')
 
         # VALIDATION OUTPUTS
 
@@ -295,9 +299,9 @@ class Experiment(L.LightningModule):
                 return len(self._dataset)
 
         if train:
-            ds = torchaudio.datasets.LIBRITTS("./data", url="train-clean-100", download=True)
+            ds = torchaudio.datasets.LIBRITTS("/raid/home/e3da/datasets/speech", url="train-clean-100", download=True)
         else:
-            ds = torchaudio.datasets.LIBRITTS("./data", url="test-clean", download=True)
+            ds = torchaudio.datasets.LIBRITTS("/raid/home/e3da/datasets/speech", url="test-clean", download=True)
 
         ds = VoiceDataset(ds, self.hparams.sample_rate, self.hparams.segment_length)
 
@@ -315,8 +319,8 @@ def train():
     wandb_logger = WandbLogger(log_model="all")
     trainer = Trainer(logger=wandb_logger)
 
-    train_set = datasets.LIBRITTS(root=".", url="train-clean-100", download=True)
-    test_set = datasets.LIBRITTS(root=".", url="test-clean", download=True)
+    # train_set = datasets.LIBRITTS(root=".", url="train-clean-100", download=True)
+    # test_set = datasets.LIBRITTS(root=".", url="test-clean", download=True)
     model = Experiment()
     trainer.fit(model)
 
