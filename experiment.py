@@ -6,13 +6,13 @@ import soundstream
 import torch 
 from torch import nn
 import torch.nn.functional as F
-from speechbrain.inference.speaker import EncoderClassifier
 from itertools import chain
 import wandb
 from torchaudio import datasets
 from discriminators import WaveDiscriminator, STFTDiscriminator
 from losses import ReconstructionLoss
 from torchmetrics.audio import PerceptualEvaluationSpeechQuality as PESQ
+import nemo.collections.asr as nemo_asr
 
 class Experiment(L.LightningModule):
 
@@ -26,7 +26,7 @@ class Experiment(L.LightningModule):
         self.automatic_optimization = False
 
         # X-VECTORS
-        self.speaker_embedder = EncoderClassifier.from_hparams(source="speechbrain/spkrec-xvect-voxceleb", savedir="pretrained_models/spkrec-xvect-voxceleb")
+        self.speaker_embedder = nemo_asr.models.EncDecSpeakerLabelModel.from_pretrained("nvidia/speakerverification_en_titanet_large")
         self.speaker_embedder.requires_grad = False
 
         # SOUNDSTREAM
@@ -106,10 +106,10 @@ class Experiment(L.LightningModule):
         # X vector loss: xvectors from the input and output audio should be as dissimilar as possible:
         # We achieve this maximizing the CosineSimilarity between the two speaker embeddings.
 
-        y_xvector =  self.speaker_embedder.encode_batch(y)
-        y_hat_xvector = self.speaker_embedder.encode_batch(y)
+        y_xvector =  self.speaker_embedder(input_signal=y, input_signal_length=torch.tensor([int(y.shape[-1])]))
+        y_hat_xvector = self.speaker_embedder(input_signal=y_hat, input_signal_length=torch.tensor([int(y_hat.shape[-1])]))
 
-        return nn.CosineSimilarity(y_xvector, y_hat_xvector)
+        return F.cosine_similarity(y_xvector, y_hat_xvector)
 
     def compute_loss(self, encoded, y, y_hat):
         
