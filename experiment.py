@@ -10,7 +10,7 @@ from itertools import chain
 import wandb
 from torchaudio import datasets
 from discriminators import WaveDiscriminator, STFTDiscriminator
-from losses import ReconstructionLoss
+from losses import ReconstructionLoss, XVectorLoss
 from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 import nemo.collections.asr as nemo_asr
 import os 
@@ -21,17 +21,22 @@ if torch.cuda.is_available():
 class Experiment(L.LightningModule):
 
     def __init__(self, 
-                    lr: float = 1e-4,
-                    b1: float = 0.5,
-                    b2: float = 0.9,):
+                 batch_size:int = 16,
+                 sample_rate: int = 16000,
+                 segment_length: int = 48000,
+                 lr: float = 1e-4,
+                 b1: float = 0.5,
+                 b2: float = 0.9,):
         
         super().__init__()
         self.save_hyperparameters()
         self.automatic_optimization = False
 
+        # self.sr = sample_rate
         # X-VECTORS
-        self.speaker_embedder = nemo_asr.models.EncDecSpeakerLabelModel.from_pretrained("nvidia/speakerverification_en_titanet_large")
-        self.speaker_embedder.requires_grad = False
+        # self.speaker_embedder = nemo_asr.models.EncDecSpeakerLabelModel.from_pretrained("nvidia/speakerverification_en_titanet_large")
+        # self.speaker_embedder.freeze()
+        # self.speaker_embedder.requires_grad = False
 
         # SOUNDSTREAM
         audio_codec = soundstream.from_pretrained()
@@ -41,6 +46,7 @@ class Experiment(L.LightningModule):
         self.decoder = codec_children[2]
 
         # HUBERT
+        self.map_to_hubert = nn.Linear(240,100)
         self.hubert = torch.hub.load("bshall/hubert:main", "hubert_soft", trust_repo=True)
         self.hubert.requires_grad = False
 
@@ -53,6 +59,7 @@ class Experiment(L.LightningModule):
         self.rec_loss = ReconstructionLoss()
         self.stft_discriminator = STFTDiscriminator()
 
+        self.x_vector_loss = XVectorLoss()
         #PESQ
         self.pesq = PerceptualEvaluationSpeechQuality(16000, 'wb')
 
@@ -100,24 +107,27 @@ class Experiment(L.LightningModule):
 
         # Distillation loss: makes the SoundStream Embedding space have hubert-like soft-speech rapresentations.
 
-        hubert_features = self.hubert(audio_input)
-        loss_distill = (z - F.interpolate(hubert_features, z.shape[2])).abs().mean()
-
-        return loss_distill
-    
-    def x_vector_loss(self, y, y_hat):
-
-        # X vector loss: xvectors from the input and output audio should be as dissimilar as possible:
-        # We achieve this maximizing the CosineSimilarity between the two speaker embeddings.
-
-        y_xvector =  self.speaker_embedder(input_signal=y, input_signal_length=torch.tensor([int(y.shape[-1])]))
-        y_hat_xvector = self.speaker_embedder(input_signal=y_hat, input_signal_length=torch.tensor([int(y_hat.shape[-1])]))
-
-        return F.cosine_similarity(y_xvector, y_hat_xvector)
-
-    def compute_loss(self, encoded, y, y_hat):
         
-        return self.distillation_loss(encoded, y) - self.x_vector_loss(y, y_hat)
+        tmp = self.map_to_hubert(z)
+        hubert_features = self.hubert(audio_input)
+
+        hubert_features = F.interpolate(hubert_features[0].unsqueeze(1), size=tmp.shape[1:], mode='bilinear').squeeze(1)
+        
+
+        return (tmp - hubert_features).abs().mean()
+    
+    # def x_vector_loss(self, y, y_hat):
+
+    #     # X vector loss: xvectors from the input and output audio should be as dissimilar as possible:
+    #     # We achieve this maximizing the CosineSimilarity between the two speaker embeddings.
+    #     self.speaker_embedder.freeze()
+    #     print(y.squeeze().shape)
+    #     print(torch.tensor([int(y.shape[2])]))
+    #     y_xvector =  self.speaker_embedder(input_signal=y.squeeze(), input_signal_length=torch.tensor([int(y.shape[-1])]))
+    #     y_hat_xvector = self.speaker_embedder(input_signal=y_hat.squeeze(), input_signal_length=torch.tensor([int(y_hat.shape[-1])]))
+
+    #     return F.cosine_similarity(y_xvector, y_hat_xvector)
+
     
     # TRAINING
     def train_generator(self, input, output):
@@ -244,7 +254,7 @@ class Experiment(L.LightningModule):
         self.validation_step_outputs["x_vector_loss"].append(similarity)
 
         # DISTILL LOSS
-        distill = self.distillation_loss(batch, embedded)
+        distill = self.distillation_loss(embedded, batch)
         self.validation_step_outputs["kd_loss"].append(distill)
 
         #AUDIO
@@ -273,7 +283,9 @@ class Experiment(L.LightningModule):
         import torchaudio
 
         def collate(examples):
-            return torch.stack(examples)
+            stacked = torch.stack(examples)
+
+            return stacked.unsqueeze(1)
 
         class VoiceDataset(torch.utils.data.Dataset):
             def __init__(self, dataset, sample_rate, segment_length):
@@ -299,14 +311,14 @@ class Experiment(L.LightningModule):
                 return len(self._dataset)
 
         if train:
-            ds = torchaudio.datasets.LIBRITTS("/raid/home/e3da/datasets/speech", url="train-clean-100", download=True)
+            ds = torchaudio.datasets.LIBRITTS("/workspace/datasets/speech", url="train-clean-100", download=True)
         else:
-            ds = torchaudio.datasets.LIBRITTS("/raid/home/e3da/datasets/speech", url="test-clean", download=True)
+            ds = torchaudio.datasets.LIBRITTS("/workspace/datasets/speech", url="test-clean", download=True)
 
         ds = VoiceDataset(ds, self.hparams.sample_rate, self.hparams.segment_length)
 
         loader = torch.utils.data.DataLoader(
-            ds, batch_size=self.hparams['batch_size'], shuffle=True,
+            ds, batch_size=self.hparams.batch_size, shuffle=True,
             collate_fn=collate)
         return loader
     
@@ -316,8 +328,10 @@ class Experiment(L.LightningModule):
 
 
 def train():
-    wandb_logger = WandbLogger(log_model="all")
-    trainer = Trainer(logger=wandb_logger)
+    wandb_logger = WandbLogger(log_model="all", project='anonymization', name="first_test")
+    trainer = Trainer(#logger=wandb_logger,
+                      devices=1,
+                      accelerator='auto')
 
     # train_set = datasets.LIBRITTS(root=".", url="train-clean-100", download=True)
     # test_set = datasets.LIBRITTS(root=".", url="test-clean", download=True)

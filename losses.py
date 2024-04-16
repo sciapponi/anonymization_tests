@@ -1,6 +1,29 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
+import nemo.collections.asr as nemo_asr
 
+class XVectorLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.speaker_model = nemo_asr.models.EncDecSpeakerLabelModel.from_pretrained("nvidia/speakerverification_en_titanet_large")
+
+    def forward(self, input, target):
+
+        self.speaker_model.freeze()
+
+        similarities = []
+        for i in range(input.shape[0]):
+            signal1 = input[i]
+            signal2 = target[i]
+            length= torch.tensor([int(signal1.shape[1])])
+            logits, emb1 = self.speaker_model(input_signal=signal1, input_signal_length=length.cuda())
+            length= torch.tensor([int(signal2.shape[1])])
+            logits, emb2 = self.speaker_model(input_signal=signal2, input_signal_length=length.cuda())
+            similarities.append(F.cosine_similarity(emb1,emb2).mean())
+
+        return torch.Tensor(similarities).mean()
+    
 class ReconstructionLoss(nn.Module):
     """Reconstruction loss from https://arxiv.org/pdf/2107.03312.pdf
     but uses STFT instead of mel-spectrogram
