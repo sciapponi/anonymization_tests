@@ -15,8 +15,8 @@ from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 import nemo.collections.asr as nemo_asr
 import os 
 
-if torch.cuda.is_available(): 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+# if torch.cuda.is_available(): 
+os.environ['CUDA_VISIBLE_DEVICES'] = '5'
 
 class Experiment(L.LightningModule):
 
@@ -32,12 +32,6 @@ class Experiment(L.LightningModule):
         self.save_hyperparameters()
         self.automatic_optimization = False
 
-        # self.sr = sample_rate
-        # X-VECTORS
-        # self.speaker_embedder = nemo_asr.models.EncDecSpeakerLabelModel.from_pretrained("nvidia/speakerverification_en_titanet_large")
-        # self.speaker_embedder.freeze()
-        # self.speaker_embedder.requires_grad = False
-
         # SOUNDSTREAM
         audio_codec = soundstream.from_pretrained()
         codec_children = list(audio_codec.children())
@@ -47,8 +41,10 @@ class Experiment(L.LightningModule):
 
         # HUBERT
         self.map_to_hubert = nn.Linear(240,100)
-        self.hubert = torch.hub.load("bshall/hubert:main", "hubert_soft", trust_repo=True)
-        self.hubert.requires_grad = False
+        self.hubert = torch.hub.load("bshall/hubert:main", "hubert_discrete", trust_repo=True)
+        # self.hubert.requires_grad = False
+        for param in self.hubert.parameters():
+            param.requires_grad = False
 
         # DISCRIMINATORS
         self.wave_discriminators = nn.ModuleList([
@@ -61,7 +57,7 @@ class Experiment(L.LightningModule):
 
         self.x_vector_loss = XVectorLoss()
         #PESQ
-        self.pesq = PerceptualEvaluationSpeechQuality(16000, 'wb')
+        # self.pesq = PerceptualEvaluationSpeechQuality(16000, 'wb')
 
         # VALIDATION OUTPUTS
 
@@ -106,32 +102,24 @@ class Experiment(L.LightningModule):
     def distillation_loss(self, z, audio_input):
 
         # Distillation loss: makes the SoundStream Embedding space have hubert-like soft-speech rapresentations.
-
+        """
+        try hubert features - tmp 
+        also try argmin |tmp|F ** 2 + |hubert_features|F ** 2 -2tr(tmp.t . hubert_features) 
+        https://openreview.net/pdf?id=U4llPAUi4z
+        """
         
         tmp = self.map_to_hubert(z)
-        hubert_features = self.hubert(audio_input)
+
+        hubert_features = self.hubert.units(audio_input)
 
         hubert_features = F.interpolate(hubert_features[0].unsqueeze(1), size=tmp.shape[1:], mode='bilinear').squeeze(1)
         
 
-        return (tmp - hubert_features).abs().mean()
-    
-    # def x_vector_loss(self, y, y_hat):
-
-    #     # X vector loss: xvectors from the input and output audio should be as dissimilar as possible:
-    #     # We achieve this maximizing the CosineSimilarity between the two speaker embeddings.
-    #     self.speaker_embedder.freeze()
-    #     print(y.squeeze().shape)
-    #     print(torch.tensor([int(y.shape[2])]))
-    #     y_xvector =  self.speaker_embedder(input_signal=y.squeeze(), input_signal_length=torch.tensor([int(y.shape[-1])]))
-    #     y_hat_xvector = self.speaker_embedder(input_signal=y_hat.squeeze(), input_signal_length=torch.tensor([int(y_hat.shape[-1])]))
-
-    #     return F.cosine_similarity(y_xvector, y_hat_xvector)
-
+        return F.cross_entropy(F.log_softmax(tmp), F.log_softmax(hubert_features))
     
     # TRAINING
     def train_generator(self, input, output):
-        stft_out = self.stft_discriminator(output)
+        stft_out = self.stft_disc1iminator(output)
         g_stft_loss = torch.mean(torch.relu(1 - stft_out))
         self.log("g_stft_loss", g_stft_loss)
 
@@ -149,12 +137,12 @@ class Experiment(L.LightningModule):
         self.log("g_feat_loss", g_feat_loss / 3)
 
         g_rec_loss = self.rec_loss(output[:, 0, :], input[:, 0, :])
-        self.log("g_rec_loss", g_rec_loss, prog_bar=True)
+        self.log("g_rec_loss", g_rec_loss)
 
         g_feat_loss = g_feat_loss / 3
         g_adv_loss = (g_stft_loss + g_wave_loss) / 4
         g_loss = g_adv_loss + 100 * g_feat_loss + g_rec_loss
-
+        self.log("g_loss", g_loss, prog_bar=True)
         return g_loss
     
     def train_discriminator(self, input, output):
@@ -244,10 +232,10 @@ class Experiment(L.LightningModule):
         out, embedded  = self(batch)
 
         # PESQ
-        pesq_score = 0
-        for ref, deg in zip(batch, out):
-            pesq_score += self.pesq(ref, deg)
-        self.validation_step_outputs["pesq"].append(pesq_score)
+        # pesq_score = 0
+        # for ref, deg in zip(batch, out):
+        #     pesq_score += self.pesq(ref, deg)
+        # self.validation_step_outputs["pesq"].append(pesq_score)
 
         # SIMILARITY LOSS
         similarity = self.x_vector_loss(batch, out)
@@ -264,11 +252,13 @@ class Experiment(L.LightningModule):
     def on_validation_epoch_end(self):
         audio_in =  self.validation_step_outputs["input"][0][0]
         audio_out =  self.validation_step_outputs["output"][0][0]
-        self.logger.experiment.log({"Input Waveform": wandb.Audio(audio_in, sample_rate=16000)})
-        self.logger.experiment.log({"Output Waveform": wandb.Audio(audio_out, sample_rate=16000)})
+        self.logger.experiment.log({"Input Waveform": wandb.Audio(audio_in.squeeze().cpu().numpy(), sample_rate=16000)})
+        self.logger.experiment.log({"Output Waveform": wandb.Audio(audio_out.squeeze().cpu().numpy(), sample_rate=16000)})
 
-        pesq = self.validation_step_outputs["pesq"]
-        self.log("val/pesq", torch.sum(pesq)/len(pesq))
+        self.log("val/x_vector_loss", torch.Tensor(self.validation_step_outputs["x_vector_loss"]).mean())
+        self.log("val/kd_loss", torch.Tensor(self.validation_step_outputs["kd_loss"]).mean())
+        # pesq = self.validation_step_outputs["pesq"]
+        # self.log("val/pesq", torch.sum(torch.Tensor(pesq))/len(pesq))
 
         self.validation_step_outputs = self.reset_valid_outputs()
 
@@ -319,7 +309,7 @@ class Experiment(L.LightningModule):
 
         loader = torch.utils.data.DataLoader(
             ds, batch_size=self.hparams.batch_size, shuffle=True,
-            collate_fn=collate)
+            collate_fn=collate, num_workers=8)
         return loader
     
     ### CALLBACKS
@@ -328,13 +318,11 @@ class Experiment(L.LightningModule):
 
 
 def train():
-    wandb_logger = WandbLogger(log_model="all", project='anonymization', name="first_test")
-    trainer = Trainer(#logger=wandb_logger,
+    wandb_logger = WandbLogger(log_model="all", project='anonymization', name="cross_entropy_rec_loss_test")
+    trainer = Trainer(logger=wandb_logger,
                       devices=1,
-                      accelerator='auto')
+                      accelerator='gpu')
 
-    # train_set = datasets.LIBRITTS(root=".", url="train-clean-100", download=True)
-    # test_set = datasets.LIBRITTS(root=".", url="test-clean", download=True)
     model = Experiment()
     trainer.fit(model)
 

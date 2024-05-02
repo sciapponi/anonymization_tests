@@ -7,10 +7,10 @@ class XVectorLoss(nn.Module):
     def __init__(self):
         super().__init__()
         self.speaker_model = nemo_asr.models.EncDecSpeakerLabelModel.from_pretrained("nvidia/speakerverification_en_titanet_large")
-
-    def forward(self, input, target):
-
+        for param in self.speaker_model.parameters():
+            param.requires_grad = False
         self.speaker_model.freeze()
+    def forward(self, input, target):
 
         similarities = []
         for i in range(input.shape[0]):
