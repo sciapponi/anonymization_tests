@@ -6,3 +6,5 @@ wandb
 torchmetrics
 nemo
 pesq
+torch-yin
+librosa @ git+https://github.com/sciapponi/librosa

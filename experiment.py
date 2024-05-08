@@ -3,6 +3,7 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch import Trainer
 from lightning.pytorch.utilities.types import EVAL_DATALOADERS
 import soundstream
+from soundstream.encoder import Encoder as SoundStreamEncoder
 import torch 
 from torch import nn
 import torch.nn.functional as F
@@ -32,16 +33,20 @@ class Experiment(L.LightningModule):
         self.save_hyperparameters()
         self.automatic_optimization = False
 
-        # SOUNDSTREAM
+        # SOUNDSTREAM (CONTENT ENCODER)
         audio_codec = soundstream.from_pretrained()
         codec_children = list(audio_codec.children())
         self.encoder = codec_children[0]
         self.quantizer = codec_children[1]
         self.decoder = codec_children[2]
 
+        # SPEAKER ENCODER: C,D from StreamVC Paper
+        self.speaker_encoder = SoundStreamEncoder(C=32, D=64)
+        
         # HUBERT
-        self.map_to_hubert = nn.Linear(240,100)
+        self.map_to_hubert = nn.Linear(256,100)
         self.hubert = torch.hub.load("bshall/hubert:main", "hubert_discrete", trust_repo=True)
+        self.centers = torch.hub.load_state_dict_from_url("https://github.com/bshall/hubert/releases/download/v0.2/kmeans100-50f36a95.pt")["cluster_centers_"].cuda()
         # self.hubert.requires_grad = False
         for param in self.hubert.parameters():
             param.requires_grad = False
@@ -62,6 +67,8 @@ class Experiment(L.LightningModule):
         # VALIDATION OUTPUTS
 
         self.validation_step_outputs = self.reset_valid_outputs()
+
+        self.ce_loss = nn.CrossEntropyLoss()
 
     def reset_valid_outputs(self):
         return {"pesq": [], 
@@ -102,20 +109,21 @@ class Experiment(L.LightningModule):
     def distillation_loss(self, z, audio_input):
 
         # Distillation loss: makes the SoundStream Embedding space have hubert-like soft-speech rapresentations.
-        """
-        try hubert features - tmp 
-        also try argmin |tmp|F ** 2 + |hubert_features|F ** 2 -2tr(tmp.t . hubert_features) 
-        https://openreview.net/pdf?id=U4llPAUi4z
-        """
-        
-        tmp = self.map_to_hubert(z)
+    
+        apply_i = lambda x: torch.argmin(torch.norm(self.centers-x, p=2, dim=1))
 
-        hubert_features = self.hubert.units(audio_input)
-
-        hubert_features = F.interpolate(hubert_features[0].unsqueeze(1), size=tmp.shape[1:], mode='bilinear').squeeze(1)
+        audio_input = F.pad(audio_input, ((400 - 320) // 2, (400 - 320) // 2))
         
 
-        return F.cross_entropy(F.log_softmax(tmp), F.log_softmax(hubert_features))
+        hubert_features = self.hubert.encode(audio_input, layer=7)
+        discrete_hubert_features = torch.stack([torch.stack([apply_i(a) for a in audio]) for audio in hubert_features[0]])
+        one_hot_units = F.one_hot(discrete_hubert_features, num_classes=100)
+
+        z =  z.permute(0,2,1)
+        z_interpolated = F.interpolate(z.unsqueeze(1), size=(one_hot_units.shape[-2], z.shape[-1]), mode='bilinear').squeeze(1)
+        z_mapped = self.map_to_hubert(z_interpolated)
+
+        return self.ce_loss(z_mapped, one_hot_units.float())
     
     # TRAINING
     def train_generator(self, input, output):
