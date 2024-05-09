@@ -4,6 +4,7 @@ from lightning.pytorch import Trainer
 from lightning.pytorch.utilities.types import EVAL_DATALOADERS
 import soundstream
 from soundstream.encoder import Encoder as SoundStreamEncoder
+from soundstream.decoder import Decoder as SoundStreamDecoder
 import torch 
 from torch import nn
 import torch.nn.functional as F
@@ -15,6 +16,7 @@ from losses import ReconstructionLoss, XVectorLoss
 from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 import nemo.collections.asr as nemo_asr
 import os 
+from modules import FilmedDecoder
 
 # if torch.cuda.is_available(): 
 os.environ['CUDA_VISIBLE_DEVICES'] = '5'
@@ -22,6 +24,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '5'
 class Experiment(L.LightningModule):
 
     def __init__(self, 
+                 use_pretrained = True,
                  batch_size:int = 16,
                  sample_rate: int = 16000,
                  segment_length: int = 48000,
@@ -34,11 +37,15 @@ class Experiment(L.LightningModule):
         self.automatic_optimization = False
 
         # SOUNDSTREAM (CONTENT ENCODER)
-        audio_codec = soundstream.from_pretrained()
-        codec_children = list(audio_codec.children())
-        self.encoder = codec_children[0]
-        self.quantizer = codec_children[1]
-        self.decoder = codec_children[2]
+        if use_pretrained:
+            audio_codec = soundstream.from_pretrained()
+            codec_children = list(audio_codec.children())
+            self.encoder = codec_children[0]
+            self.quantizer = codec_children[1]
+            self.decoder = FilmedDecoder(codec_children[2])
+        else:
+            self.encoder = SoundStreamEncoder(C=32, D=64)
+            self.decoder = FilmedDecoder(SoundStreamDecoder(C=40, D=64))
 
         # SPEAKER ENCODER: C,D from StreamVC Paper
         self.speaker_encoder = SoundStreamEncoder(C=32, D=64)

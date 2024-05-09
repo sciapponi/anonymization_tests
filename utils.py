@@ -33,13 +33,3 @@ class F0Extractor(nn.Module):
         return torch.stack(output)
 
 
-class FilmLayer(nn.Module):
-
-    def __init__(self, in_features, out_features):
-        self.out_features = out_features
-        self.film = nn.Linear(in_features=in_features, out_features=2*out_features)
-
-    def forward(self, x, conditioning):
-        beta, gamma = self.film(conditioning).split(self.out_features, dim=-1)
-
-        return gamma * x + beta
