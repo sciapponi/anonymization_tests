@@ -38,7 +38,7 @@ class FilmedDecoder(nn.Module):
 
         # PASS TROUGH FILM CONDITIONING LAYER BEFORE EACH RESIDUAL UNIT
         for i, sequential in enumerate(self.decoder_blocks):
-            x = sequential[0](x)
+            x = sequential[0](x) # First conv transposed
             for j, residual in enumerate(sequential[1:]):
                 x = self.films[i][j](x, conditioning)
                 x = residual(x)
@@ -49,16 +49,15 @@ class FilmedDecoder(nn.Module):
 
 class LearnablePooling(nn.Module):
     def __init__(self, embedding_dim):
+        
         super().__init__()
-        self.ap = nn.AdaptiveAvgPool1d(1)
-        self.map = nn.Linear(embedding_dim,embedding_dim)
+        self.query = nn.Linear(embedding_dim,1)
 
     def forward(self, speaker_frames):
-        query = self.map(self.ap(speaker_frames).permute(0,-1,-2)).permute(0,-1,-2)
-
-        attention_scores = query*speaker_frames
-
+    
+        q = self.query(speaker_frames.permute(0,-1,-2))
+        attention_scores = q.permute(0,-1,-2)*speaker_frames
         attention_weights = nn.functional.softmax(attention_scores, dim=1)
-
         context_vector = torch.mul(speaker_frames, attention_weights)
+
         return torch.sum(context_vector, dim=-1)

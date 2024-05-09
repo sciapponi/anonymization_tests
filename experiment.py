@@ -44,7 +44,7 @@ class Experiment(L.LightningModule):
             self.quantizer = codec_children[1]
             self.decoder = FilmedDecoder(codec_children[2])
         else:
-            self.encoder = SoundStreamEncoder(C=32, D=64)
+            self.encoder = SoundStreamEncoder(C=64, D=64)
             self.decoder = FilmedDecoder(SoundStreamDecoder(C=40, D=64))
 
         # SPEAKER ENCODER: C,D from StreamVC Paper
