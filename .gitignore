@@ -2,3 +2,4 @@ venv
 wandb
 data
 test.py
+__pycache__
