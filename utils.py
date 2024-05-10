@@ -9,7 +9,7 @@ class F0Extractor(nn.Module):
                  sr,
                  fmin=40,
                  fmax=8000):
-        super(F0Extractor).__init__()
+        super().__init__()
         self.sr = sr
         self.fmin = fmin 
         self.fmax = fmax
@@ -27,9 +27,16 @@ class F0Extractor(nn.Module):
                                 trough_threshold=th,
                                 # win_length=int(self.sr*0.02)
                                 )
-                outs.append(torch.Tensor(np.array(yin)))
+                energy = np.array(yin[-1])
+                outs.append(torch.Tensor(np.array(yin[:-1])))
+            
+            outs.append(torch.Tensor(np.expand_dims(energy, 0)))
             output.append(torch.cat(outs))
         
         return torch.stack(output)
 
 
+if __name__=="__main__":
+    s = torch.randn(1,1,1600)
+    module = F0Extractor(sr=16000)
+    print(module(s))
