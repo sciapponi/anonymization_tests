@@ -10,13 +10,12 @@ from torch import nn
 import torch.nn.functional as F
 from itertools import chain
 import wandb
-from torchaudio import datasets
 from discriminators import WaveDiscriminator, STFTDiscriminator
 from losses import ReconstructionLoss, XVectorLoss
 from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
-import nemo.collections.asr as nemo_asr
 import os 
-from modules import FilmedDecoder
+from modules import FilmedDecoder, LearnablePooling
+from utils import F0Extractor
 
 # if torch.cuda.is_available(): 
 os.environ['CUDA_VISIBLE_DEVICES'] = '5'
@@ -28,6 +27,7 @@ class Experiment(L.LightningModule):
                  batch_size:int = 16,
                  sample_rate: int = 16000,
                  segment_length: int = 48000,
+                 latent_space_dim = 64,
                  lr: float = 1e-4,
                  b1: float = 0.5,
                  b2: float = 0.9,):
@@ -40,18 +40,21 @@ class Experiment(L.LightningModule):
         if use_pretrained:
             audio_codec = soundstream.from_pretrained()
             codec_children = list(audio_codec.children())
-            self.encoder = codec_children[0]
+            self.content_encoder = codec_children[0]
             self.quantizer = codec_children[1]
             self.decoder = FilmedDecoder(codec_children[2])
         else:
-            self.encoder = SoundStreamEncoder(C=64, D=64)
-            self.decoder = FilmedDecoder(SoundStreamDecoder(C=40, D=64))
+            self.content_encoder = SoundStreamEncoder(C=64, D=latent_space_dim)
+            self.decoder = FilmedDecoder(SoundStreamDecoder(C=40, D=latent_space_dim))
+
+        self.f0_extractor = F0Extractor(sample_rate)
 
         # SPEAKER ENCODER: C,D from StreamVC Paper
-        self.speaker_encoder = SoundStreamEncoder(C=32, D=64)
+        self.speaker_encoder = SoundStreamEncoder(C=32, D=latent_space_dim)
+        self.pooling = LearnablePooling(embedding_dim=latent_space_dim)
         
         # HUBERT
-        self.map_to_hubert = nn.Linear(256,100)
+        self.map_to_hubert = nn.Linear(latent_space_dim,100)
         self.hubert = torch.hub.load("bshall/hubert:main", "hubert_discrete", trust_repo=True)
         self.centers = torch.hub.load_state_dict_from_url("https://github.com/bshall/hubert/releases/download/v0.2/kmeans100-50f36a95.pt")["cluster_centers_"].cuda()
         # self.hubert.requires_grad = False
@@ -106,9 +109,16 @@ class Experiment(L.LightningModule):
     
     def forward(self, audio_input):
         #SOUNDSTREAM
-        encoded = self.encoder(audio_input)
-        quantized, _, _ = self.quantizer(encoded.permute(0,2,1))
-        audio_output = self.decoder(quantized.permute(0,2,1))
+        # encoded = self.encoder(audio_input)
+        # quantized, _, _ = self.quantizer(encoded.permute(0,2,1))
+        # audio_output = self.decoder(quantized.permute(0,2,1))
+
+        encoded = self.content_encoder(audio_input)
+        f_0 =  self.f0_extractor(audio_input)
+        speaker_frames = self.speaker_encoder(audio_input)
+        speaker_embedding = self.pooling(speaker_frames)
+
+        audio_output = self.decoder(encoded, f_0, speaker_embedding)
 
         return audio_output, encoded
     

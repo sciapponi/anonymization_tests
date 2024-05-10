@@ -25,7 +25,7 @@ class F0Extractor(nn.Module):
                                 fmax =self.fmax, 
                                 sr=self.sr,
                                 trough_threshold=th,
-                                # win_length=int(self.sr*0.02)
+                                frame_length=1283
                                 )
                 energy = np.array(yin[-1])
                 outs.append(torch.Tensor(np.array(yin[:-1])))

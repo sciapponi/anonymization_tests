@@ -12,16 +12,15 @@ class FilmLayer(nn.Module):
     def forward(self, x, conditioning):
         beta, gamma = self.film(conditioning).split(self.out_features, dim=-1)
 
-        return gamma.unsqueeze(1) * x + beta.unsqueeze(1)
+        return gamma.unsqueeze(-1) * x + beta.unsqueeze(-1)
 
 class FilmedDecoder(nn.Module):
     # ADDS FILM LAYER TO SOUNDSTREAM DECODER
 
-    def __init__(self, soundstream_decoder, C, D, conditioning_size, f0_size):
+    def __init__(self, soundstream_decoder, C, conditioning_size):
         super().__init__()
 
-        decoder_children = [block for block in soundstream_decoder.children()]
-        decoder_blocks = [i for j in decoder_children[0] for i in j.children()]
+        decoder_blocks = [j for j in soundstream_decoder.children()][0]
         self.first_conv = decoder_blocks[0]
         self.last_conv = decoder_blocks[-1]
         self.decoder_blocks = decoder_blocks[1:-1]
@@ -34,13 +33,14 @@ class FilmedDecoder(nn.Module):
         ])
     
     def forward(self, x, f0, conditioning):
-        x = torch.stack(x, f0, dim=1)
+        x = torch.cat((x, f0.squeeze(-2)), dim=1)
         x = self.first_conv(x)
-
         # PASS TROUGH FILM CONDITIONING LAYER BEFORE EACH RESIDUAL UNIT
         for i, sequential in enumerate(self.decoder_blocks):
-            x = sequential[0](x) # First conv transposed
-            for j, residual in enumerate(sequential[1:]):
+            blocks = [j for j in sequential.children()][0]
+            x = blocks[0](x) # First conv transposed
+            for j, residual in enumerate(blocks[1:]):
+                x = x.permute(0,-2,-1)
                 x = self.films[i][j](x, conditioning)
                 x = residual(x)
 
