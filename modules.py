@@ -1,5 +1,6 @@
 import torch 
-from torch import nn 
+import torch.nn as nn
+import torch.nn.functional as F
 
 class FilmLayer(nn.Module):
 
@@ -51,13 +52,11 @@ class LearnablePooling(nn.Module):
     def __init__(self, embedding_dim):
         
         super().__init__()
-        self.query = nn.Linear(embedding_dim,1)
+        self.query = nn.Linear(embedding_dim, 1)
 
     def forward(self, speaker_frames):
-    
         q = self.query(speaker_frames.permute(0,-1,-2))
-        attention_scores = q.permute(0,-1,-2)*speaker_frames
-        attention_weights = nn.functional.softmax(attention_scores, dim=1)
-        context_vector = torch.mul(speaker_frames, attention_weights)
+        attention_scores = q.permute(0,-1,-2).softmax(1)
+        context_vector = speaker_frames * attention_scores
 
         return torch.sum(context_vector, dim=-1)
