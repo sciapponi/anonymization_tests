@@ -54,7 +54,7 @@ class Experiment(L.LightningModule):
         self.pooling = LearnablePooling(embedding_dim=latent_space_dim)
         
         # HUBERT
-        self.map_to_hubert = nn.Linear(latent_space_dim,100)
+        self.map_to_hubert = nn.Sequential(nn.LayerNorm(64),nn.Linear(latent_space_dim,100))
         self.hubert = torch.hub.load("bshall/hubert:main", "hubert_discrete", trust_repo=True)
         self.centers = torch.hub.load_state_dict_from_url("https://github.com/bshall/hubert/releases/download/v0.2/kmeans100-50f36a95.pt")["cluster_centers_"].cuda()
         # self.hubert.requires_grad = False
@@ -129,18 +129,18 @@ class Experiment(L.LightningModule):
     
         apply_i = lambda x: torch.argmin(torch.norm(self.centers-x, p=2, dim=1))
 
-        audio_input = F.pad(audio_input, ((400 - 320) // 2, (400 - 320) // 2))
+        hubert_source = F.pad(audio_input, ((400 - 320) // 2, (400 - 320) // 2))
         
 
-        hubert_features = self.hubert.encode(audio_input, layer=7)
+        hubert_features = self.hubert.encode(hubert_source, layer=7)
         discrete_hubert_features = torch.stack([torch.stack([apply_i(a) for a in audio]) for audio in hubert_features[0]])
         one_hot_units = F.one_hot(discrete_hubert_features, num_classes=100)
 
         z =  z.permute(0,2,1)
-        z_interpolated = F.interpolate(z.unsqueeze(1), size=(one_hot_units.shape[-2], z.shape[-1]), mode='bilinear').squeeze(1)
-        z_mapped = self.map_to_hubert(z_interpolated)
+        # z_interpolated = F.interpolate(z.unsqueeze(1), size=(one_hot_units.shape[-2], z.shape[-1]), mode='bilinear').squeeze(1)
+        z_mapped = self.map_to_hubert(z)
 
-        return self.ce_loss(z_mapped, one_hot_units.float())
+        return self.ce_loss(F.softmax(z_mapped, dim=-1), one_hot_units.float())
     
     # TRAINING
     def train_generator(self, input, output):
