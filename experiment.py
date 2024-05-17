@@ -11,19 +11,19 @@ import torch.nn.functional as F
 from itertools import chain
 import wandb
 from discriminators import WaveDiscriminator, STFTDiscriminator
-from losses import ReconstructionLoss, XVectorLoss
+from losses import ReconstructionLoss#, XVectorLoss
 from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 import os 
 from modules import FilmedDecoder, LearnablePooling
 from utils import F0Extractor
 
 # if torch.cuda.is_available(): 
-os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
 class Experiment(L.LightningModule):
 
     def __init__(self, 
-                 use_pretrained = True,
+                 use_pretrained = False,
                  batch_size:int = 16,
                  sample_rate: int = 16000,
                  segment_length: int = 48000,
@@ -45,7 +45,7 @@ class Experiment(L.LightningModule):
             self.decoder = FilmedDecoder(codec_children[2])
         else:
             self.content_encoder = SoundStreamEncoder(C=64, D=latent_space_dim)
-            self.decoder = FilmedDecoder(SoundStreamDecoder(C=40, D=latent_space_dim))
+            self.decoder = FilmedDecoder(SoundStreamDecoder(C=40, D=latent_space_dim), C=40, conditioning_size=64)
 
         self.f0_extractor = F0Extractor(sample_rate)
 
@@ -70,7 +70,7 @@ class Experiment(L.LightningModule):
         self.rec_loss = ReconstructionLoss()
         self.stft_discriminator = STFTDiscriminator()
 
-        self.x_vector_loss = XVectorLoss()
+        # self.x_vector_loss = XVectorLoss()
         #PESQ
         # self.pesq = PerceptualEvaluationSpeechQuality(16000, 'wb')
 
@@ -95,7 +95,10 @@ class Experiment(L.LightningModule):
 
         optimizer_g = torch.optim.Adam(
             chain(
-                self.encoder.parameters(),
+                self.content_encoder.parameters(),
+                self.speaker_encoder.parameters(),
+                self.map_to_hubert.parameters(),
+                self.pooling.parameters(),
                 self.decoder.parameters()
             ),
             lr=lr, betas=(b1, b2))
@@ -202,18 +205,20 @@ class Experiment(L.LightningModule):
         
         ### ENCODER STEP
         self.decoder.requires_grad = False 
+        self.content_encoder.requires_grad = True
+        self.speaker_encoder.requires_grad = False
         audio_output, encoded = self(batch)
         
         g_loss = self.train_generator(batch, audio_output)
 
         e_distill_loss = self.distillation_loss(encoded, batch)
         
-        e_xvector_loss = self.x_vector_loss(batch, audio_output)
+        #e_xvector_loss = self.x_vector_loss(batch, audio_output)
         
-        loss = g_loss + e_distill_loss - e_xvector_loss
+        loss = g_loss + e_distill_loss #- e_xvector_loss
 
         self.log("train/encoder_distill_loss", e_distill_loss)
-        self.log("train/encoder_xvector_loss", e_xvector_loss)
+        #self.log("train/encoder_xvector_loss", e_xvector_loss)
         self.log("train/encoder_loss", loss)
 
         self.manual_backward(loss)
@@ -222,20 +227,21 @@ class Experiment(L.LightningModule):
         
         ### DECODER STEP
         self.decoder.requires_grad = True
-        self.encoder.requires_grad = False 
-        self.quantizer.requires_grad = False 
+        self.content_encoder.requires_grad = False 
+        self.speaker_encoder.requires_grad = True
+        # self.quantizer.requires_grad = False 
         audio_output, encoded = self(batch)
 
         g_loss = self.train_generator(batch, audio_output)
 
         d_distill_loss = self.distillation_loss(encoded, batch)
 
-        d_xvector_loss = self.x_vector_loss(batch, audio_output)
+        #d_xvector_loss = self.x_vector_loss(batch, audio_output)
 
-        loss = g_loss + d_distill_loss - d_xvector_loss
+        loss = g_loss + d_distill_loss #- d_xvector_loss
 
         self.log("train/decoder_distill_loss", d_distill_loss)
-        self.log("train/decoder_xvector_loss", d_xvector_loss)
+        #self.log("train/decoder_xvector_loss", d_xvector_loss)
         self.log("train/decoder_loss", loss)
 
         self.manual_backward(loss)
@@ -343,7 +349,7 @@ class Experiment(L.LightningModule):
 
 
 def train():
-    wandb_logger = WandbLogger(log_model="all", project='anonymization', name="cross_entropy_rec_loss_test")
+    wandb_logger = WandbLogger(log_model="all", project='anonymization', name="streamvc_1")
     trainer = Trainer(logger=wandb_logger,
                       devices=1,
                       accelerator='gpu')
