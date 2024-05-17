@@ -161,7 +161,7 @@ class YinModule(nn.Module):
         
         #frame_audio
         y_frames = self.frame_audio(y.squeeze(), self.frame_length, self.hop_length)#.permute(-1,-2)
-        print(y_frames.shape)
+
         # Calculate minimum and maximum periods
         min_period = int(torch.floor(torch.Tensor([self.sr / self.fmax])))
 
