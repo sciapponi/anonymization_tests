@@ -363,7 +363,7 @@ class Experiment(L.LightningModule):
 
 
 def train():
-    wandb_logger = WandbLogger(log_model="all", project='anonymization', name="streamvc_lento_librosa")
+    wandb_logger = WandbLogger(log_model="all", project='anonymization', name="streamvc_torchyin")
     trainer = Trainer(logger=wandb_logger,
                       devices=1,
                       accelerator='gpu')
