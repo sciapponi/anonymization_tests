@@ -16,6 +16,7 @@ from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 import os 
 from modules import FilmedDecoder, LearnablePooling
 from utils import F0Extractor
+from yin import YinModule
 
 # if torch.cuda.is_available(): 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2'
@@ -114,7 +115,7 @@ class Experiment(L.LightningModule):
         
         encoded = encoded = self.content_encoder(audio_input)
         f_0 =  self.f0_extractor(audio_input)
-        
+
         speaker_frames = self.speaker_encoder(target_audio)
         speaker_embedding = self.pooling(speaker_frames)
 

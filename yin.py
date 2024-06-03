@@ -173,7 +173,6 @@ class YinModule(nn.Module):
                                                                                  min_period, 
                                                                                  max_period)
 
-        print(yin_frames.shape)
         parabolic_shifts = self.pi(yin_frames)
 
         is_trough = self.find_local_minima(yin_frames)
@@ -205,22 +204,19 @@ class YinModule(nn.Module):
 
         f0 = self.sr/yin_period
 
-        return f0, yin_period, energy_frames_0
-    
-signal, fs = torchaudio.load("LJ001-0013.wav")
-new_fs = 16000
-signal = torchaudio.transforms.Resample(fs, new_fs)(signal)
-fs = new_fs
-signal = signal[:,:1600]
-signal = torch.stack([signal, signal, signal], dim=0)
-print(signal.shape)
+        return f0, yin_period, aperiodic, energy_frames_0
 
-# signal = torch.randn(1,154481)
-# print(YinModule.frame_audio(signal[0], 2048, 2048//4).shape)
-yin = YinModule(fmin =20, fmax=8000, sr=16000)
-print("\n---------------------------------\n")
-print(yin(signal))
 
-# pi = ParabolicInterpolation1d()
+if __name__ == "__main__":
+    signal, fs = torchaudio.load("LJ001-0013.wav")
+    new_fs = 16000
+    signal = torchaudio.transforms.Resample(fs, new_fs)(signal)
+    fs = new_fs
+    signal = signal[:,:1600]
+    signal = torch.stack([signal, signal, signal], dim=0)
+    print(signal.shape)
 
-# print(pi(torch.randn(8,30,10)).shape)
+    yin = YinModule(fmin =20, fmax=8000, sr=16000)
+    print("\n---------------------------------\n")
+    print(yin(signal))
+
