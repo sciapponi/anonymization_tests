@@ -19,6 +19,8 @@ from utils import F0Extractor
 
 # if torch.cuda.is_available(): 
 os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+torch.set_default_device('cuda')
 
 class Experiment(L.LightningModule):
 
