@@ -24,7 +24,7 @@ class Experiment(L.LightningModule):
 
     def __init__(self, 
                  use_pretrained = False,
-                 batch_size:int = 32,
+                 batch_size:int = 16,
                  sample_rate: int = 16000,
                  segment_length: int = 48000,
                  latent_space_dim = 64,
