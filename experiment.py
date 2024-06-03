@@ -345,7 +345,7 @@ class Experiment(L.LightningModule):
                 return len(self._dataset)
 
         if train:
-            ds = torchaudio.datasets.LIBRITTS("/workspace/datasets/speech", url="train-clean-100", download=True)
+            ds = torchaudio.datasets.LIBRITTS("/workspace/datasets/speech", url="train-clean-360", download=True)
         else:
             ds = torchaudio.datasets.LIBRITTS("/workspace/datasets/speech", url="test-clean", download=True)
 
