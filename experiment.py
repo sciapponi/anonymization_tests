@@ -16,7 +16,6 @@ from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 import os 
 from modules import FilmedDecoder, LearnablePooling
 from utils import F0Extractor
-from yin import YinModule
 
 # if torch.cuda.is_available(): 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2'
