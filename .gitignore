@@ -3,3 +3,5 @@ wandb
 data
 test.py
 __pycache__
+anonymization
+lightning_logs
