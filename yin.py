@@ -6,8 +6,8 @@ import torchaudio
 class ParabolicInterpolation1d(nn.Module):
     def __init__(self):
         super().__init__()
-        self.kernel_a = torch.tensor([1, -2, 1], dtype=torch.float).view(1,1,3)
-        self.kernel_b = torch.tensor([-0.5, 0, 0.5], dtype=torch.float).view(1,1,3)
+        self.kernel_a = torch.tensor([1, -2, 1], dtype=torch.float).view(1,1,3).to('cuda')
+        self.kernel_b = torch.tensor([-0.5, 0, 0.5], dtype=torch.float).view(1,1,3).to('cuda')
     def forward(self, x):
         output = []
         for sample in x:
