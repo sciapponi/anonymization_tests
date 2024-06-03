@@ -19,8 +19,8 @@ from utils import F0Extractor
 
 # if torch.cuda.is_available(): 
 os.environ['CUDA_VISIBLE_DEVICES'] = '2'
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-torch.set_default_device('cuda')
+# device = 'cuda' if torch.cuda.is_available() else 'cpu'
+# torch.set_default_device('cuda')
 
 class Experiment(L.LightningModule):
 
@@ -110,6 +110,7 @@ class Experiment(L.LightningModule):
                 self.stft_discriminator.parameters()
             ),
             lr=lr, betas=(b1, b2))
+        
         return [optimizer_g, optimizer_d], []
     
     def generate(self, audio_input, target_audio):
