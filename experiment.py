@@ -18,7 +18,7 @@ from modules import FilmedDecoder, LearnablePooling
 from utils import F0Extractor
 
 # if torch.cuda.is_available(): 
-os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
 class Experiment(L.LightningModule):
 
@@ -110,6 +110,18 @@ class Experiment(L.LightningModule):
             lr=lr, betas=(b1, b2))
         return [optimizer_g, optimizer_d], []
     
+    def generate(self, audio_input, target_audio):
+        
+        encoded = encoded = self.content_encoder(audio_input)
+        f_0 =  self.f0_extractor(audio_input)
+        
+        speaker_frames = self.speaker_encoder(target_audio)
+        speaker_embedding = self.pooling(speaker_frames)
+
+        audio_output = self.decoder(encoded, f_0, speaker_embedding)
+
+        return audio_output
+
     def forward(self, audio_input):
         #SOUNDSTREAM
         # encoded = self.encoder(audio_input)
@@ -124,7 +136,7 @@ class Experiment(L.LightningModule):
 
         audio_output = self.decoder(encoded, f_0, speaker_embedding)
 
-        return audio_output, encoded
+        return audio_output
     
     # LOSSES
     def distillation_loss(self, z, audio_input):
@@ -133,18 +145,18 @@ class Experiment(L.LightningModule):
     
         apply_i = lambda x: torch.argmin(torch.norm(self.centers-x, p=2, dim=1))
 
-        audio_input = F.pad(audio_input, ((400 - 320) // 2, (400 - 320) // 2))
+        hubert_source = F.pad(audio_input, ((400 - 320) // 2, (400 - 320) // 2))
         
 
-        hubert_features = self.hubert.encode(audio_input, layer=7)
+        hubert_features = self.hubert.encode(hubert_source, layer=7)
         discrete_hubert_features = torch.stack([torch.stack([apply_i(a) for a in audio]) for audio in hubert_features[0]])
         one_hot_units = F.one_hot(discrete_hubert_features, num_classes=100)
 
         z =  z.permute(0,2,1)
-        z_interpolated = F.interpolate(z.unsqueeze(1), size=(one_hot_units.shape[-2], z.shape[-1]), mode='bilinear').squeeze(1)
-        z_mapped = self.map_to_hubert(z_interpolated)
+        # z_interpolated = F.interpolate(z.unsqueeze(1), size=(one_hot_units.shape[-2], z.shape[-1]), mode='bilinear').squeeze(1)
+        z_mapped = self.map_to_hubert(z)
 
-        return self.ce_loss(z_mapped, one_hot_units.float())
+        return self.ce_loss(F.softmax(z_mapped, dim=-1), one_hot_units.float())
     
     # TRAINING
     def train_generator(self, input, output):
