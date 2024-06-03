@@ -44,9 +44,7 @@ class FilmedDecoder(nn.Module):
             x = blocks[0](x) # First conv transposed
             for j, residual in enumerate(blocks[1:]):
                 x = x.permute(0,-2,-1)
-                print(x)
                 x = self.films[i][j](x, conditioning)
-                print(x)
                 x = residual(x)
 
         x = self.last_conv(x)

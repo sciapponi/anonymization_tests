@@ -136,7 +136,7 @@ class Experiment(L.LightningModule):
 
         audio_output = self.decoder(encoded, f_0, speaker_embedding)
 
-        return audio_output
+        return audio_output, encoded
     
     # LOSSES
     def distillation_loss(self, z, audio_input):
