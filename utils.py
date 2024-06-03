@@ -45,6 +45,7 @@ class F0Extractor(nn.Module):
                  frame_length=1283):
         super().__init__()
 
+        # Yin Modules for threshilds: 0.15, 0.10, 0.05
         self.yin_module_005 = YinModule(fmin, fmax, sr, threshold=0.05, frame_length=frame_length)
         self.yin_module_010 = YinModule(fmin, fmax, sr, threshold=0.10, frame_length=frame_length)
         self.yin_module_015 = YinModule(fmin, fmax, sr, threshold=0.15, frame_length=frame_length)
