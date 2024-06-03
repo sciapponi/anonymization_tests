@@ -33,6 +33,9 @@ class FilmedDecoder(nn.Module):
         ])
     
     def forward(self, x, f0, conditioning):
+        # print(x.shape)
+        # print(f0.shape)
+        # f0 = f0[...,:-1]
         x = torch.cat((x, f0.squeeze(-2)), dim=1)
         x = self.first_conv(x)
         # PASS TROUGH FILM CONDITIONING LAYER BEFORE EACH RESIDUAL UNIT
@@ -41,7 +44,9 @@ class FilmedDecoder(nn.Module):
             x = blocks[0](x) # First conv transposed
             for j, residual in enumerate(blocks[1:]):
                 x = x.permute(0,-2,-1)
+                print(x)
                 x = self.films[i][j](x, conditioning)
+                print(x)
                 x = residual(x)
 
         x = self.last_conv(x)

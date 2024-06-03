@@ -18,7 +18,7 @@ from modules import FilmedDecoder, LearnablePooling
 from utils import F0Extractor
 
 # if torch.cuda.is_available(): 
-os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
 class Experiment(L.LightningModule):
 
@@ -45,7 +45,7 @@ class Experiment(L.LightningModule):
             self.decoder = FilmedDecoder(codec_children[2])
         else:
             self.content_encoder = SoundStreamEncoder(C=64, D=latent_space_dim)
-            self.decoder = FilmedDecoder(SoundStreamDecoder(C=40, D=latent_space_dim), C=40, conditioning_size=64)
+            self.decoder = FilmedDecoder(SoundStreamDecoder(C=40, D=latent_space_dim+10), C=40, conditioning_size=64)
 
         self.f0_extractor = F0Extractor(sample_rate)
 
@@ -54,7 +54,7 @@ class Experiment(L.LightningModule):
         self.pooling = LearnablePooling(embedding_dim=latent_space_dim)
         
         # HUBERT
-        self.map_to_hubert = nn.Sequential(nn.LayerNorm(64),nn.Linear(latent_space_dim,100))
+        self.map_to_hubert = nn.Linear(latent_space_dim,100)
         self.hubert = torch.hub.load("bshall/hubert:main", "hubert_discrete", trust_repo=True)
         self.centers = torch.hub.load_state_dict_from_url("https://github.com/bshall/hubert/releases/download/v0.2/kmeans100-50f36a95.pt")["cluster_centers_"].cuda()
         # self.hubert.requires_grad = False
@@ -110,6 +110,18 @@ class Experiment(L.LightningModule):
             lr=lr, betas=(b1, b2))
         return [optimizer_g, optimizer_d], []
     
+    def generate(self, audio_input, target_audio):
+        
+        encoded = encoded = self.content_encoder(audio_input)
+        f_0 =  self.f0_extractor(audio_input)
+        
+        speaker_frames = self.speaker_encoder(target_audio)
+        speaker_embedding = self.pooling(speaker_frames)
+
+        audio_output = self.decoder(encoded, f_0, speaker_embedding)
+
+        return audio_output
+
     def forward(self, audio_input):
         #SOUNDSTREAM
         # encoded = self.encoder(audio_input)
@@ -123,7 +135,7 @@ class Experiment(L.LightningModule):
 
         audio_output = self.decoder(encoded, f_0, speaker_embedding)
 
-        return audio_output, encoded
+        return audio_output
     
     # LOSSES
     def distillation_loss(self, z, audio_input):
