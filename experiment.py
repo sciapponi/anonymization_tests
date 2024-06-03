@@ -24,7 +24,7 @@ class Experiment(L.LightningModule):
 
     def __init__(self, 
                  use_pretrained = False,
-                 batch_size:int = 16,
+                 batch_size:int = 32,
                  sample_rate: int = 16000,
                  segment_length: int = 48000,
                  latent_space_dim = 64,
@@ -366,7 +366,8 @@ def train():
     wandb_logger = WandbLogger(log_model="all", project='anonymization', name="streamvc_torchyin")
     trainer = Trainer(logger=wandb_logger,
                       devices=1,
-                      accelerator='gpu')
+                      accelerator='gpu',
+                      max_steps=130000)
 
     model = Experiment()
     trainer.fit(model)
