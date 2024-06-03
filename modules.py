@@ -33,7 +33,7 @@ class FilmedDecoder(nn.Module):
         ])
     
     def forward(self, x, f0, conditioning):
-        x = torch.cat((x, f0.squeeze(-2)), dim=1)
+        x = torch.cat((x, f0.cuda().squeeze(-2)), dim=1)
         x = self.first_conv(x)
         # PASS TROUGH FILM CONDITIONING LAYER BEFORE EACH RESIDUAL UNIT
         for i, sequential in enumerate(self.decoder_blocks):

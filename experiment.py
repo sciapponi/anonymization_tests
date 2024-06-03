@@ -45,7 +45,7 @@ class Experiment(L.LightningModule):
             self.decoder = FilmedDecoder(codec_children[2])
         else:
             self.content_encoder = SoundStreamEncoder(C=64, D=latent_space_dim)
-            self.decoder = FilmedDecoder(SoundStreamDecoder(C=40, D=latent_space_dim), C=40, conditioning_size=64)
+            self.decoder = FilmedDecoder(SoundStreamDecoder(C=40, D=latent_space_dim+10), C=40, conditioning_size=64)
 
         self.f0_extractor = F0Extractor(sample_rate)
 
@@ -118,6 +118,7 @@ class Experiment(L.LightningModule):
 
         encoded = self.content_encoder(audio_input)
         f_0 =  self.f0_extractor(audio_input)
+        # f_0 =  torch.randn(16, 10, 1, 150)
         speaker_frames = self.speaker_encoder(audio_input)
         speaker_embedding = self.pooling(speaker_frames)
 
@@ -147,7 +148,7 @@ class Experiment(L.LightningModule):
     
     # TRAINING
     def train_generator(self, input, output):
-        stft_out = self.stft_disc1iminator(output)
+        stft_out = self.stft_discriminator(output)
         g_stft_loss = torch.mean(torch.relu(1 - stft_out))
         self.log("g_stft_loss", g_stft_loss)
 
@@ -269,8 +270,8 @@ class Experiment(L.LightningModule):
         # self.validation_step_outputs["pesq"].append(pesq_score)
 
         # SIMILARITY LOSS
-        similarity = self.x_vector_loss(batch, out)
-        self.validation_step_outputs["x_vector_loss"].append(similarity)
+        # similarity = self.x_vector_loss(batch, out)
+        # self.validation_step_outputs["x_vector_loss"].append(similarity)
 
         # DISTILL LOSS
         distill = self.distillation_loss(embedded, batch)
@@ -337,10 +338,11 @@ class Experiment(L.LightningModule):
             ds = torchaudio.datasets.LIBRITTS("/workspace/datasets/speech", url="test-clean", download=True)
 
         ds = VoiceDataset(ds, self.hparams.sample_rate, self.hparams.segment_length)
-
+        
+        
         loader = torch.utils.data.DataLoader(
-            ds, batch_size=self.hparams.batch_size, shuffle=True,
-            collate_fn=collate, num_workers=8)
+            ds, batch_size=self.hparams.batch_size, shuffle=train,
+            collate_fn=collate, num_workers=8, pin_memory=True)
         return loader
     
     ### CALLBACKS
@@ -349,7 +351,7 @@ class Experiment(L.LightningModule):
 
 
 def train():
-    wandb_logger = WandbLogger(log_model="all", project='anonymization', name="streamvc_1")
+    wandb_logger = WandbLogger(log_model="all", project='anonymization', name="streamvc_lento_librosa")
     trainer = Trainer(logger=wandb_logger,
                       devices=1,
                       accelerator='gpu')

@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-import nemo.collections.asr as nemo_asr
+# import nemo.collections.asr as nemo_asr
 
 class XVectorLoss(nn.Module):
     def __init__(self):
