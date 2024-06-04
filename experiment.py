@@ -137,7 +137,7 @@ class Experiment(L.LightningModule):
         speaker_frames = self.speaker_encoder(audio_input)
         speaker_embedding = self.pooling(speaker_frames)
 
-        audio_output = self.decoder(encoded, f_0, speaker_embedding)
+        audio_output = self.decoder(encoded.clone().detach(), f_0, speaker_embedding)
 
         return audio_output, encoded
     
@@ -220,9 +220,9 @@ class Experiment(L.LightningModule):
         self.toggle_optimizer(optimizer_g)
         
         ### ENCODER STEP
-        self.decoder.requires_grad = False 
-        self.content_encoder.requires_grad = True
-        self.speaker_encoder.requires_grad = False
+        # self.decoder.requires_grad = False 
+        # self.content_encoder.requires_grad = True
+        # self.speaker_encoder.requires_grad = False
         audio_output, encoded = self(batch)
         
         g_loss = self.train_generator(batch, audio_output)
@@ -242,23 +242,23 @@ class Experiment(L.LightningModule):
         optimizer_g.zero_grad()
         
         ### DECODER STEP
-        self.decoder.requires_grad = True
-        self.content_encoder.requires_grad = False 
-        self.speaker_encoder.requires_grad = True
-        # self.quantizer.requires_grad = False 
-        audio_output, encoded = self(batch)
+        # self.decoder.requires_grad = True
+        # self.content_encoder.requires_grad = False 
+        # self.speaker_encoder.requires_grad = True
+        # # self.quantizer.requires_grad = False 
+        # audio_output, encoded = self(batch)
 
-        g_loss = self.train_generator(batch, audio_output)
+        # g_loss = self.train_generator(batch, audio_output)
 
-        d_distill_loss = self.distillation_loss(encoded, batch)
+        # d_distill_loss = self.distillation_loss(encoded, batch)
 
         #d_xvector_loss = self.x_vector_loss(batch, audio_output)
 
-        loss = g_loss + d_distill_loss #- d_xvector_loss
+        # loss = g_loss + d_distill_loss #- d_xvector_loss
 
-        self.log("train/decoder_distill_loss", d_distill_loss)
-        #self.log("train/decoder_xvector_loss", d_xvector_loss)
-        self.log("train/decoder_loss", loss)
+        # self.log("train/decoder_distill_loss", d_distill_loss)
+        # #self.log("train/decoder_xvector_loss", d_xvector_loss)
+        # self.log("train/decoder_loss", loss)
 
         self.manual_backward(loss)
         optimizer_g.step()
