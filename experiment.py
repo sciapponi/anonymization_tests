@@ -239,6 +239,8 @@ class Experiment(L.LightningModule):
         self.log("train/encoder_loss", loss)
 
         self.manual_backward(loss)
+        print(self.decoder[0].grad)
+        exit()
         optimizer_g.step()
         optimizer_g.zero_grad()
         
