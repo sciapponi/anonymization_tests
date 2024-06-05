@@ -374,7 +374,7 @@ class Experiment(L.LightningModule):
 
 
 def train():
-    ddp = DDPStrategy(process_group_backend='gloo')
+    ddp = DDPStrategy(process_group_backend='gloo', find_unused_parameters=True)
     wandb_logger = WandbLogger(log_model="all", project='anonymization', name="streamvc_whitening")
     trainer = Trainer(logger=wandb_logger,
                       devices=2,
