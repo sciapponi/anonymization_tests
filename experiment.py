@@ -52,7 +52,7 @@ class Experiment(L.LightningModule):
             self.content_encoder = SoundStreamEncoder(C=64, D=latent_space_dim)
             self.decoder = FilmedDecoder(SoundStreamDecoder(C=40, D=latent_space_dim+10), C=40, conditioning_size=64)
 
-        self.f0_extractor = F0Extractor(sample_rate).to('cuda')
+        self.f0_extractor = F0Extractor(sample_rate)
 
         # SPEAKER ENCODER: C,D from StreamVC Paper
         self.speaker_encoder = SoundStreamEncoder(C=32, D=latent_space_dim)
@@ -136,6 +136,7 @@ class Experiment(L.LightningModule):
         # audio_output = self.decoder(quantized.permute(0,2,1))
 
         encoded = self.content_encoder(audio_input)
+        self.f0_extractor.to(audio_input.device)
         f_0 =  self.f0_extractor(audio_input)
         # f_0 =  torch.randn(16, 10, 1, 150)
         speaker_frames = self.speaker_encoder(audio_input)
