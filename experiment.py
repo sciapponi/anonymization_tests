@@ -16,6 +16,9 @@ from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 import os 
 from modules import FilmedDecoder, LearnablePooling
 from utils import F0Extractor
+from lightning.pytorch.strategies import DDPStrategy
+
+torch.set_float32_matmul_precision('medium')
 
 # if torch.cuda.is_available(): 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2'
@@ -369,9 +372,11 @@ class Experiment(L.LightningModule):
 
 
 def train():
+    ddp = DDPStrategy(process_group_backend='gloo')
     wandb_logger = WandbLogger(log_model="all", project='anonymization', name="streamvc_whitening")
     trainer = Trainer(logger=wandb_logger,
                       devices=2,
+                      strategy=ddp,
                       accelerator='gpu',
                       max_steps=130000)
 
