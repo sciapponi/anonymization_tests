@@ -56,7 +56,7 @@ class Experiment(L.LightningModule):
         self.pooling = LearnablePooling(embedding_dim=latent_space_dim)
         
         # HUBERT
-        self.map_to_hubert = nn.Sequential(nn.LayerNorm(normalized_shape=[150, latent_space_dim]),
+        self.map_to_hubert = nn.Sequential(nn.LayerNorm(normalized_shape=[150, latent_space_dim]), #hardcoded
                                            nn.Linear(latent_space_dim,100))
         self.hubert = torch.hub.load("bshall/hubert:main", "hubert_discrete", trust_repo=True)
         self.centers = torch.hub.load_state_dict_from_url("https://github.com/bshall/hubert/releases/download/v0.2/kmeans100-50f36a95.pt")["cluster_centers_"].cuda()
