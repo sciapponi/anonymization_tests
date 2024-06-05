@@ -18,7 +18,7 @@ from modules import FilmedDecoder, LearnablePooling
 from utils import F0Extractor
 
 # if torch.cuda.is_available(): 
-os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 # device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # torch.set_default_device('cuda')
 
@@ -56,7 +56,8 @@ class Experiment(L.LightningModule):
         self.pooling = LearnablePooling(embedding_dim=latent_space_dim)
         
         # HUBERT
-        self.map_to_hubert = nn.Linear(latent_space_dim,100)
+        self.map_to_hubert = nn.Sequential(nn.LayerNorm(normalized_shape=(-1,)),
+                                           nn.Linear(latent_space_dim,100))
         self.hubert = torch.hub.load("bshall/hubert:main", "hubert_discrete", trust_repo=True)
         self.centers = torch.hub.load_state_dict_from_url("https://github.com/bshall/hubert/releases/download/v0.2/kmeans100-50f36a95.pt")["cluster_centers_"].cuda()
         # self.hubert.requires_grad = False
@@ -137,7 +138,7 @@ class Experiment(L.LightningModule):
         speaker_frames = self.speaker_encoder(audio_input)
         speaker_embedding = self.pooling(speaker_frames)
 
-        audio_output = self.decoder(encoded.clone().detach(), f_0, speaker_embedding)
+        audio_output = self.decoder(encoded, f_0, speaker_embedding)
 
         return audio_output, encoded
     
@@ -220,9 +221,9 @@ class Experiment(L.LightningModule):
         self.toggle_optimizer(optimizer_g)
         
         ### ENCODER STEP
-        # self.decoder.requires_grad = False 
-        # self.content_encoder.requires_grad = True
-        # self.speaker_encoder.requires_grad = False
+        self.decoder.requires_grad = False 
+        self.content_encoder.requires_grad = True
+        self.speaker_encoder.requires_grad = False
         audio_output, encoded = self(batch)
         
         g_loss = self.train_generator(batch, audio_output)
@@ -242,23 +243,23 @@ class Experiment(L.LightningModule):
         optimizer_g.zero_grad()
         
         ### DECODER STEP
-        # self.decoder.requires_grad = True
-        # self.content_encoder.requires_grad = False 
-        # self.speaker_encoder.requires_grad = True
-        # # self.quantizer.requires_grad = False 
-        # audio_output, encoded = self(batch)
+        self.decoder.requires_grad = True
+        self.content_encoder.requires_grad = False 
+        self.speaker_encoder.requires_grad = True
+        # self.quantizer.requires_grad = False 
+        audio_output, encoded = self(batch)
 
-        # g_loss = self.train_generator(batch, audio_output)
+        g_loss = self.train_generator(batch, audio_output)
 
-        # d_distill_loss = self.distillation_loss(encoded, batch)
+        d_distill_loss = self.distillation_loss(encoded, batch)
 
         #d_xvector_loss = self.x_vector_loss(batch, audio_output)
 
-        # loss = g_loss + d_distill_loss #- d_xvector_loss
+        loss = g_loss + d_distill_loss #- d_xvector_loss
 
-        # self.log("train/decoder_distill_loss", d_distill_loss)
-        # #self.log("train/decoder_xvector_loss", d_xvector_loss)
-        # self.log("train/decoder_loss", loss)
+        self.log("train/decoder_distill_loss", d_distill_loss)
+        #self.log("train/decoder_xvector_loss", d_xvector_loss)
+        self.log("train/decoder_loss", loss)
 
         self.manual_backward(loss)
         optimizer_g.step()
