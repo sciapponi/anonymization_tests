@@ -136,8 +136,8 @@ class Experiment(L.LightningModule):
         # audio_output = self.decoder(quantized.permute(0,2,1))
 
         encoded = self.content_encoder(audio_input)
-        self.f0_extractor.to(audio_input.device)
-        f_0 =  self.f0_extractor(audio_input)
+        f0_extractor = self.f0_extractor.to(audio_input.device)
+        f_0 =  f0_extractor(audio_input)
         # f_0 =  torch.randn(16, 10, 1, 150)
         speaker_frames = self.speaker_encoder(audio_input)
         speaker_embedding = self.pooling(speaker_frames)
