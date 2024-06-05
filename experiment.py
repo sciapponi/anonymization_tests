@@ -239,15 +239,16 @@ class Experiment(L.LightningModule):
         self.log("train/encoder_loss", loss)
 
         self.manual_backward(loss)
-        print(self.decoder.first_conv.conv.weight.grad)
-        exit()
+        # print("Decoder grad:", self.decoder.first_conv.conv.weight.grad)
+
         optimizer_g.step()
         optimizer_g.zero_grad()
         
         ### DECODER STEP
-        self.decoder.requires_grad = True
-        self.content_encoder.requires_grad = False 
-        self.speaker_encoder.requires_grad = True
+        self.decoder.requires_grad_(True)
+        self.content_encoder.requires_grad_(False) 
+        self.speaker_encoder.requires_grad_(True)
+        
         # self.quantizer.requires_grad = False 
         audio_output, encoded = self(batch)
 
@@ -264,6 +265,8 @@ class Experiment(L.LightningModule):
         self.log("train/decoder_loss", loss)
 
         self.manual_backward(loss)
+        print("content encoder grad:", self.content_encoder.layers[0].conv.weight.grad)
+        exit()
         optimizer_g.step()
         optimizer_d.zero_grad()
         self.untoggle_optimizer(optimizer_g)
