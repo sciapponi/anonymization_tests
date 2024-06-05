@@ -6,9 +6,12 @@ import torchaudio
 class ParabolicInterpolation1d(nn.Module):
     def __init__(self):
         super().__init__()
-        self.kernel_a = torch.tensor([1, -2, 1], dtype=torch.float).view(1,1,3).to('cuda')
-        self.kernel_b = torch.tensor([-0.5, 0, 0.5], dtype=torch.float).view(1,1,3).to('cuda')
+        self.kernel_a = torch.tensor([1, -2, 1], dtype=torch.float).view(1,1,3)
+        self.kernel_b = torch.tensor([-0.5, 0, 0.5], dtype=torch.float).view(1,1,3)
+
     def forward(self, x):
+        self.kernel_a.to(x.device)
+        self.kernel_b.to(x.device)
         output = []
         for sample in x:
             sample = sample.squeeze().unsqueeze(-2)
@@ -144,7 +147,7 @@ class YinModule(nn.Module):
         yin_numerator = yin_frames[..., min_period : max_period+1]
 
         # Broadcast to have leading ones
-        tau_range = torch.arange(1, max_period+1, 1)[None, None, :].to("cuda")
+        tau_range = torch.arange(1, max_period+1, 1)[None, None, :].to(y_frames.device)
         cumulative_mean = torch.cumsum(yin_frames[..., 1:max_period+1], dim=-1)/tau_range
         yin_denominator = cumulative_mean[..., min_period-1:max_period]
         yin_frames = yin_numerator / (yin_denominator + epsilon)
@@ -160,7 +163,7 @@ class YinModule(nn.Module):
             y = torch.nn.functional.pad(y, padding, mode=self.pad_mode)
         
         #frame_audio
-        y_frames = self.frame_audio(y.squeeze(), self.frame_length, self.hop_length).to('cuda')#.permute(-1,-2)
+        y_frames = self.frame_audio(y.squeeze(), self.frame_length, self.hop_length).to(y.device)#.permute(-1,-2)
 
         # Calculate minimum and maximum periods
         min_period = int(torch.floor(torch.Tensor([self.sr / self.fmax])))
