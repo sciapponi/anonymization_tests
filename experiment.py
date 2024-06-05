@@ -239,9 +239,6 @@ class Experiment(L.LightningModule):
         self.log("train/encoder_loss", loss)
 
         self.manual_backward(loss)
-        print("content encoder grad:", self.content_encoder.layers[0].conv.weight.grad)
-        print("Decoder grad:", self.decoder.first_conv.conv.weight.grad)
-
         optimizer_g.step()
         optimizer_g.zero_grad()
         
@@ -266,9 +263,7 @@ class Experiment(L.LightningModule):
         self.log("train/decoder_loss", loss)
 
         self.manual_backward(loss)
-        print("content encoder grad:", self.content_encoder.layers[0].conv.weight.grad)
-        print("Decoder grad:", self.decoder.first_conv.conv.weight.grad)
-        exit()
+
         optimizer_g.step()
         optimizer_d.zero_grad()
         self.untoggle_optimizer(optimizer_g)
@@ -376,7 +371,7 @@ class Experiment(L.LightningModule):
 def train():
     wandb_logger = WandbLogger(log_model="all", project='anonymization', name="streamvc_whitening")
     trainer = Trainer(logger=wandb_logger,
-                      devices=1,
+                      devices=2,
                       accelerator='gpu',
                       max_steps=130000)
 
