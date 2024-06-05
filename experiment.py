@@ -221,9 +221,9 @@ class Experiment(L.LightningModule):
         self.toggle_optimizer(optimizer_g)
         
         ### ENCODER STEP
-        self.decoder.requires_grad = False 
-        self.content_encoder.requires_grad = True
-        self.speaker_encoder.requires_grad = False
+        self.decoder.requires_grad_(False) 
+        self.content_encoder.requires_grad_(True)
+        self.speaker_encoder.requires_grad_(False)
         audio_output, encoded = self(batch)
         
         g_loss = self.train_generator(batch, audio_output)
