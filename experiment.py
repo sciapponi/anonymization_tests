@@ -239,6 +239,7 @@ class Experiment(L.LightningModule):
         self.log("train/encoder_loss", loss)
 
         self.manual_backward(loss)
+        print("content encoder grad:", self.content_encoder.layers[0].conv.weight.grad)
         print("Decoder grad:", self.decoder.first_conv.conv.weight.grad)
 
         optimizer_g.step()
@@ -266,6 +267,7 @@ class Experiment(L.LightningModule):
 
         self.manual_backward(loss)
         print("content encoder grad:", self.content_encoder.layers[0].conv.weight.grad)
+        print("Decoder grad:", self.decoder.first_conv.conv.weight.grad)
         exit()
         optimizer_g.step()
         optimizer_d.zero_grad()
