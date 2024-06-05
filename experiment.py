@@ -150,8 +150,9 @@ class Experiment(L.LightningModule):
     def distillation_loss(self, z, audio_input):
 
         # Distillation loss: makes the SoundStream Embedding space have hubert-like soft-speech rapresentations.
-    
-        apply_i = lambda x: torch.argmin(torch.norm(self.centers-x, p=2, dim=1))
+
+        centers = self.centers.to(z.device)
+        apply_i = lambda x: torch.argmin(torch.norm(centers-x, p=2, dim=1))
 
         hubert_source = F.pad(audio_input, ((400 - 320) // 2, (400 - 320) // 2))
         
