@@ -14,7 +14,7 @@ class ParabolicInterpolation1d(nn.Module):
         self.kernel_b.to(x.device)
         output = []
         for sample in x:
-            sample = sample.squeeze().unsqueeze(-2)
+            sample = sample.squeeze().unsqueeze(-2).to(x.device)
             a = torch.nn.functional.conv1d(sample, weight=self.kernel_a, stride=1, padding=1)
             b = torch.nn.functional.conv1d(sample, weight=self.kernel_b, stride=1, padding=1)
             out = ((-b)/a).squeeze(-2)
