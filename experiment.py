@@ -365,7 +365,7 @@ class Experiment(L.LightningModule):
         
         loader = torch.utils.data.DataLoader(
             ds, batch_size=self.hparams.batch_size, shuffle=train,
-            collate_fn=collate, num_workers=8, pin_memory=True)
+            collate_fn=collate, num_workers=24, pin_memory=True, persistent_workers=True)
         return loader
     
     ### CALLBACKS
@@ -374,13 +374,13 @@ class Experiment(L.LightningModule):
 
 
 def train():
-    ddp = DDPStrategy(process_group_backend='gloo', find_unused_parameters=True)
-    wandb_logger = WandbLogger(log_model="all", project='anonymization', name="streamvc_whitening")
+    #ddp = DDPStrategy( find_unused_parameters=True)
+    wandb_logger = WandbLogger(log_model="all", project='anonymization', name="streamvc_whitening_full")
     trainer = Trainer(logger=wandb_logger,
-                      devices=2,
-                      strategy=ddp,
+                      devices=1,
+                      #strategy=ddp,
                       accelerator='gpu',
-                      max_steps=130000)
+                      max_steps=1300000)
 
     model = Experiment()
     trainer.fit(model)

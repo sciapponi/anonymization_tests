@@ -1,10 +1,8 @@
 lightning
 soundstream
-torch
-torchaudio
 wandb
 torchmetrics
-nemo
 pesq
-torch-yin
-librosa @ git+https://github.com/sciapponi/librosa
+sklearn
+soundfile
+
