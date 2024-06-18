@@ -36,6 +36,10 @@ class FilmedDecoder(nn.Module):
         # print(x.shape)
         # print(f0.shape)
         # f0 = f0[...,:-1]
+        print(x.shape)
+        print(f0.shape)
+        if len(x.shape)==2:
+            x=x.unsqueeze(0)
         x = torch.cat((x, f0.squeeze(-2)), dim=1)
         x = self.first_conv(x)
         # PASS TROUGH FILM CONDITIONING LAYER BEFORE EACH RESIDUAL UNIT
@@ -63,3 +67,27 @@ class LearnablePooling(nn.Module):
         context_vector = speaker_frames * attention_scores
 
         return torch.sum(context_vector, dim=-1)
+
+class LearnablePoolingParam(nn.Module):
+    #Github implementation https://github.com/hrnoh24/stream-vc/blob/main/src/models/components/streamvc.py#L113
+    def __init__(self, embedding_dim):
+        
+        super().__init__()
+        self.learnable_query = nn.Parameter(torch.randn((1, 1, embedding_dim)))
+
+    def forward(self, emb):
+        
+        B, d_k, _ = emb.shape
+        print("lq", self.learnable_query.shape)
+        query = self.learnable_query.expand(B, -1, -1) # [B, 1, C]
+        key = emb # [B, C, N]
+        value = emb.transpose(1, 2) # [B, N, C]
+
+        score = torch.matmul(query, key) # [B, 1, N]
+        score = score / (d_k ** 0.5)
+
+        probs = F.softmax(score, dim=-1) # [B, 1, N]
+        out = torch.matmul(probs, value) # [B, 1, C]
+        out = out.squeeze(1) # [B, C]
+
+        return out

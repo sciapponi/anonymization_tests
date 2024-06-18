@@ -162,8 +162,12 @@ class YinModule(nn.Module):
             padding = tuple(padding)
             y = torch.nn.functional.pad(y, padding, mode=self.pad_mode)
         
+        if y.shape[0]==1:
+            y = y.squeeze().unsqueeze(0)
+        else:
+            y = y.squeeze()
         #frame_audio
-        y_frames = self.frame_audio(y.squeeze(), self.frame_length, self.hop_length).to(y.device)#.permute(-1,-2)
+        y_frames = self.frame_audio(y, self.frame_length, self.hop_length).to(y.device)#.permute(-1,-2)
 
         # Calculate minimum and maximum periods
         min_period = int(torch.floor(torch.Tensor([self.sr / self.fmax])))
