@@ -14,7 +14,7 @@ from discriminators import WaveDiscriminator, STFTDiscriminator
 from losses import ReconstructionLoss#, XVectorLoss
 from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 import os 
-from modules import FilmedDecoder, LearnablePooling
+from modules import FilmedDecoder, LearnablePoolingParam
 from utils import F0Extractor
 from lightning.pytorch.strategies import DDPStrategy
 
@@ -56,7 +56,7 @@ class Experiment(L.LightningModule):
 
         # SPEAKER ENCODER: C,D from StreamVC Paper
         self.speaker_encoder = SoundStreamEncoder(C=32, D=latent_space_dim)
-        self.pooling = LearnablePooling(embedding_dim=latent_space_dim)
+        self.pooling = LearnablePoolingParam(embedding_dim=latent_space_dim)
         
         # HUBERT
         self.map_to_hubert = nn.Sequential(nn.LayerNorm(normalized_shape=[150, latent_space_dim]), #hardcoded
