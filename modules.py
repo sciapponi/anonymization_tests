@@ -36,8 +36,8 @@ class FilmedDecoder(nn.Module):
         # print(x.shape)
         # print(f0.shape)
         # f0 = f0[...,:-1]
-        print(x.shape)
-        print(f0.shape)
+        # print(x.shape)
+        # print(f0.shape)
         if len(x.shape)==2:
             x=x.unsqueeze(0)
         x = torch.cat((x, f0.squeeze(-2)), dim=1)
@@ -78,7 +78,7 @@ class LearnablePoolingParam(nn.Module):
     def forward(self, emb):
         
         B, d_k, _ = emb.shape
-        print("lq", self.learnable_query.shape)
+        # print("lq", self.learnable_query.shape)
         query = self.learnable_query.expand(B, -1, -1) # [B, 1, C]
         key = emb # [B, C, N]
         value = emb.transpose(1, 2) # [B, N, C]
