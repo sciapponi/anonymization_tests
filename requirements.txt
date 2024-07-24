@@ -3,6 +3,6 @@ soundstream
 wandb
 torchmetrics
 pesq
-sklearn
+scikit-learn
 soundfile
 
