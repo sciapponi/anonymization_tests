@@ -1,8 +1,0 @@
-b1: 0.5
-b2: 0.9
-batch_size: 4
-latent_space_dim: 64
-lr: 0.0001
-sample_rate: 16000
-segment_length: 48000
-use_pretrained: false
