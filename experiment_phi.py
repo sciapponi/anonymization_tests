@@ -9,7 +9,8 @@ from itertools import chain
 import wandb
 from discriminators import WaveDiscriminator, STFTDiscriminator
 from losses import ReconstructionLoss#, XVectorLoss
-from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
+# from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
+from pesq import pesq
 from model import SoundPhi
 from torchmetrics.audio import ScaleInvariantSignalDistortionRatio as SISDR
 from torchmetrics.audio import  SignalNoiseRatio as SNR
@@ -53,7 +54,6 @@ class ExperimentPhi(L.LightningModule):
 
         # self.x_vector_loss = XVectorLoss()
         #PESQ
-        self.pesq = PerceptualEvaluationSpeechQuality(16000, 'wb')
 
         # VALIDATION OUTPUTS
         self.si_sdr = SISDR()
@@ -193,7 +193,7 @@ class ExperimentPhi(L.LightningModule):
         # PESQ
         pesq_score = 0
         for ref, deg in zip(batch, out):
-            pesq_score += self.pesq(ref, deg)
+            pesq_score += pesq(16000, ref.squeeze().cpu().numpy(), deg.squeeze().cpu().numpy(), "wb", on_error=1)
         pesq_score /= batch.shape[0]
         self.validation_step_outputs["pesq"].append(pesq_score)
 
@@ -263,9 +263,10 @@ class ExperimentPhi(L.LightningModule):
 
             def __len__(self):
                 return len(self._dataset)
+                # return 100
 
         if train:
-            ds = torchaudio.datasets.LIBRITTS("/home/ste/Datasets/", url="train-clean-100", download=True)
+            ds = torchaudio.datasets.LIBRITTS("/home/ste/Datasets/", url="train-clean-360", download=True)
         else:
             ds = torchaudio.datasets.LIBRITTS("/home/ste/Datasets/", url="test-clean", download=True)
 
@@ -274,7 +275,7 @@ class ExperimentPhi(L.LightningModule):
         
         loader = torch.utils.data.DataLoader(
             ds, batch_size=self.hparams.batch_size, shuffle=train,
-            collate_fn=collate, num_workers=24, pin_memory=True, persistent_workers=True)
+            collate_fn=collate, num_workers=20, pin_memory=True, persistent_workers=True)
         return loader
     
     ### CALLBACKS
@@ -284,15 +285,15 @@ class ExperimentPhi(L.LightningModule):
 
 def train():
     #ddp = DDPStrategy( find_unused_parameters=True)
-    # logger = WandbLogger(log_model="all", project='anonymization', name="streamvc_whitening_full")
-    logger = CSVLogger("logs", name="exp_1")
+    logger = WandbLogger(log_model="all", project='soundphi', name="train_01")
+    # logger = CSVLogger("logs", name="exp_1")
     trainer = Trainer(logger=logger,
                       devices=1,
                       #strategy=ddp,
                       accelerator='gpu',
-                      max_steps=1300000)
+                      max_steps=1000000)
 
-    model = ExperimentPhi(batch_size=4,)
+    model = ExperimentPhi(batch_size=16,)
     # trainer.fit(model)
     trainer.fit(model)
 

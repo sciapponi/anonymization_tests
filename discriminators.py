@@ -63,7 +63,8 @@ class STFTDiscriminator(nn.Module):
         assert input.shape[1] == 1
         # input: [batch, channel, sequence]
         x = torch.squeeze(input, 1).to(torch.float32)  # torch.stft() doesn't accept float16
-        x = torch.stft(x, self.n_fft, self.hop_length, normalized=True, onesided=True, return_complex=True)
+        # print(torch.hann_window(self.n_fft))
+        x = torch.stft(x, self.n_fft, self.hop_length, window=torch.hann_window(self.n_fft).cuda(), normalized=True, onesided=True, return_complex=True)
         x = torch.abs(x)
         x = torch.unsqueeze(x, dim=1)
         x = self.layers(x)

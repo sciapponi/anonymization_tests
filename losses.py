@@ -41,9 +41,9 @@ class ReconstructionLoss(nn.Module):
             alpha = (s / 2) ** 0.5
             # We use STFT instead of 64-bin mel-spectrogram as n_fft=64 is too small
             # for 64 bins.
-            x = torch.stft(input, n_fft=s, hop_length=s // 4, win_length=s, normalized=True, onesided=True, return_complex=True)
+            x = torch.stft(input, n_fft=s, hop_length=s // 4, window=torch.hann_window(s).cuda(), win_length=s, normalized=True, onesided=True, return_complex=True)
             x = torch.abs(x)
-            y = torch.stft(target, n_fft=s, hop_length=s // 4, win_length=s, normalized=True, onesided=True, return_complex=True)
+            y = torch.stft(target, n_fft=s, hop_length=s // 4, window=torch.hann_window(s).cuda(), win_length=s, normalized=True, onesided=True, return_complex=True)
             y = torch.abs(y)
             if x.shape[-1] > y.shape[-1]:
                 x = x[:, :, :y.shape[-1]]

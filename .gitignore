@@ -6,4 +6,4 @@ __pycache__
 anonymization
 lightning_logs
 *.wav
-logs/
+logs
