@@ -42,6 +42,7 @@ class FilmedDecoder(nn.Module):
             x=x.unsqueeze(0)
         x = torch.cat((x, f0.squeeze(-2)), dim=1)
         x = self.first_conv(x)
+        print("FIRST CONV" ,x.shape)
         # PASS TROUGH FILM CONDITIONING LAYER BEFORE EACH RESIDUAL UNIT
         for i, sequential in enumerate(self.decoder_blocks):
             blocks = [j for j in sequential.children()][0]
@@ -91,3 +92,113 @@ class LearnablePoolingParam(nn.Module):
         out = out.squeeze(1) # [B, C]
 
         return out
+    
+class ConvSpeakerEncoder(nn.Module):
+    def __init__(self, input_dim, num_channels, output_dim):
+        super(ConvSpeakerEncoder, self).__init__()
+        
+        self.conv1 = nn.Conv1d(input_dim, num_channels, kernel_size=5, stride=1, padding=2)
+        self.conv2 = nn.Conv1d(num_channels, num_channels, kernel_size=5, stride=1, padding=2)
+        self.conv3 = nn.Conv1d(num_channels, num_channels, kernel_size=5, stride=1, padding=2)
+        
+        self.global_pool = nn.AdaptiveAvgPool1d(1)
+        
+        self.fc1 = nn.Linear(num_channels, num_channels)
+        self.fc2 = nn.Linear(num_channels, output_dim)
+        
+    def forward(self, x):
+        # x shape: (batch_size, sequence_length, input_dim)
+        
+        # Transpose for 1D convolution
+        x = x.transpose(1, 2)  # (batch_size, input_dim, sequence_length)
+        
+        # Convolutional layers
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        
+        # Global pooling
+        x = self.global_pool(x).squeeze(-1)
+        
+        # Fully connected layers
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        
+        # Normalize the embedding
+        normalized_embedding = F.normalize(x, p=2, dim=1)
+        
+        return normalized_embedding
+    
+class APCModule(nn.Module):
+
+    def __init__(self, c_in, c_bank):
+        super().__init__()
+        self.layers = nn.ModuleList(
+            [
+                nn.Conv1d(
+                    c_in,
+                    c_bank,
+                    kernel_size=3,
+                    padding=1,
+                    dilation=1,
+                    padding_mode="reflect",
+                ),
+                nn.Conv1d(
+                    c_in,
+                    c_bank,
+                    kernel_size=3,
+                    padding=2,
+                    dilation=2,
+                    padding_mode="reflect",
+                ),
+                nn.Conv1d(
+                    c_in,
+                    c_bank,
+                    kernel_size=3,
+                    padding=4,
+                    dilation=4,
+                    padding_mode="reflect",
+                ),
+                nn.Conv1d(
+                    c_in,
+                    c_bank,
+                    kernel_size=3,
+                    padding=6,
+                    dilation=6,
+                    padding_mode="reflect",
+                ),
+                nn.Conv1d(
+                    c_in,
+                    c_bank,
+                    kernel_size=3,
+                    padding=8,
+                    dilation=8,
+                    padding_mode="reflect",
+                ),
+            ])
+        
+        self.act = nn.ReLU()
+
+    def forward(self, inp):
+        out_list = []
+        for layer in self.layers:
+            print(self.act(layer(inp)).shape)
+            out_list.append(self.act(layer(inp)))
+        outData = torch.cat(out_list + [inp], dim=1)
+        return outData
+
+if __name__=="__main__":
+    # Example usage
+    input_dim = 40  # e.g., 40 mel-frequency cepstral coefficients (MFCCs)
+    num_channels = 128
+    output_dim = 64  # embedding dimension
+    batch_size = 1
+    sequence_length = 100
+
+    model = ConvSpeakerEncoder(input_dim, num_channels, output_dim)
+    dummy_input = torch.randn(batch_size, sequence_length, input_dim)
+    output = model(dummy_input)
+    print(output.shape)  # Should be (batch_size, output_dim)
+
+    APC =APCModule(80, 100)
+    print(APC(torch.randn(1, 80,100)).shape)
