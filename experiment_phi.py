@@ -287,13 +287,17 @@ def train():
     #ddp = DDPStrategy( find_unused_parameters=True)
     logger = WandbLogger(log_model="all", project='soundphi', name="train_01")
     # logger = CSVLogger("logs", name="exp_1")
+
+    wandb.init(project="soundphi")  
+    artifact = wandb.use_artifact('soundphi/model-8kq0vn4z:v21', type='model') 
+    artifact_dir = artifact.download()  
     trainer = Trainer(logger=logger,
                       devices=1,
                       #strategy=ddp,
                       accelerator='gpu',
-                      max_steps=1000000)
+                      max_steps=2000000)
 
-    model = ExperimentPhi(batch_size=16,)
+    model = ExperimentPhi.load_from_checkpoint(f"{artifact_dir}/model.ckpt")
     # trainer.fit(model)
     trainer.fit(model)
 

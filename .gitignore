@@ -7,3 +7,4 @@ anonymization
 lightning_logs
 *.wav
 logs
+artifacts
