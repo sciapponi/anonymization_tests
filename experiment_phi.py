@@ -211,8 +211,8 @@ class ExperimentPhi(L.LightningModule):
     def on_validation_epoch_end(self):
         audio_in =  self.validation_step_outputs["input"][0][0]
         audio_out =  self.validation_step_outputs["output"][0][0]
-        # self.logger.experiment.log({"Input Waveform": wandb.Audio(audio_in.squeeze().cpu().numpy(), sample_rate=16000)})
-        # self.logger.experiment.log({"Output Waveform": wandb.Audio(audio_out.squeeze().cpu().numpy(), sample_rate=16000)})
+        self.logger.experiment.log({"Input Waveform": wandb.Audio(audio_in.squeeze().cpu().numpy(), sample_rate=16000)})
+        self.logger.experiment.log({"Output Waveform": wandb.Audio(audio_out.squeeze().cpu().numpy(), sample_rate=16000)})
 
         # self.log("val/x_vector_loss", torch.Tensor(self.validation_step_outputs["x_vector_loss"]).mean())
         # self.log("val/kd_loss", torch.Tensor(self.validation_step_outputs["kd_loss"]).mean())
@@ -266,9 +266,9 @@ class ExperimentPhi(L.LightningModule):
                 # return 100
 
         if train:
-            ds = torchaudio.datasets.LIBRITTS("/home/ste/Datasets/", url="train-clean-360", download=True)
+            ds = torchaudio.datasets.LIBRITTS("/workspace/datasets/audio", url="train-clean-360", download=True)
         else:
-            ds = torchaudio.datasets.LIBRITTS("/home/ste/Datasets/", url="test-clean", download=True)
+            ds = torchaudio.datasets.LIBRITTS("/workspace/datasets/audio", url="test-clean", download=True)
 
         ds = VoiceDataset(ds, self.hparams.sample_rate, self.hparams.segment_length)
         
