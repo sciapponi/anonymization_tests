@@ -13,7 +13,7 @@ from losses import ReconstructionLoss#, XVectorLoss
 from pesq import pesq
 from model import SoundPhi
 from torchmetrics.audio import ScaleInvariantSignalDistortionRatio as SISDR
-from torchmetrics.audio import  SignalNoiseRatio as SNR
+from torchmetrics.audio import  ScaleInvariantSignalNoiseRatio as SISNR
 
 torch.set_float32_matmul_precision('medium')
 
@@ -57,7 +57,7 @@ class ExperimentPhi(L.LightningModule):
 
         # VALIDATION OUTPUTS
         self.si_sdr = SISDR()
-        self.snr = SNR()
+        self.snr = SISNR()
         self.validation_step_outputs = self.reset_valid_outputs()
 
         # self.ce_loss = nn.CrossEntropyLoss()
@@ -166,8 +166,10 @@ class ExperimentPhi(L.LightningModule):
         g_loss = self.train_generator(batch, audio_output)
 
         #e_xvector_loss = self.x_vector_loss(batch, audio_output)
-        
-        loss = g_loss #- e_xvector_loss
+        sdr_loss = self.si_sdr(batch, audio_output)
+        snr_loss = self.si_snr(batch, audio_output)
+
+        loss = g_loss - sdr_loss - snr_loss #- e_xvector_loss
 
         self.log("train/encoder_loss", loss)
 
@@ -283,22 +285,28 @@ class ExperimentPhi(L.LightningModule):
         pass
 
 
-def train():
+def train(artifact_url=None):
     #ddp = DDPStrategy( find_unused_parameters=True)
     logger = WandbLogger(log_model="all", project='soundphi', name="train_01")
     # logger = CSVLogger("logs", name="exp_1")
 
-    wandb.init(project="soundphi")  
-    artifact = wandb.use_artifact('soundphi/model-8kq0vn4z:v21', type='model') 
-    artifact_dir = artifact.download()  
+    if artifact_url != None:
+        wandb.init(project="soundphi")  
+        # e.g. artifact_dir = 'soundphi/model-8kq0vn4z:v21'
+        artifact = wandb.use_artifact(artifact_url, type='model') 
+        artifact_dir = artifact.download()  
+        model = ExperimentPhi.load_from_checkpoint(f"{artifact_dir}/model.ckpt")
+    else:
+        model = ExperimentPhi()
+        
     trainer = Trainer(logger=logger,
                       devices=1,
                       #strategy=ddp,
                       accelerator='gpu',
                       max_steps=2000000)
 
-    model = ExperimentPhi.load_from_checkpoint(f"{artifact_dir}/model.ckpt")
-    # trainer.fit(model)
+    
+
     trainer.fit(model)
 
 

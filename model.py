@@ -53,8 +53,8 @@ class SoundPhi(nn.Module):
 if __name__=="__main__":
     net = SoundPhi(latent_space_dim=64,
                     n_q=16,
-                    codebook_size=1024)
+                    codebook_size=1024).cuda()
     
-    summary(net, (1,16000))
-    print(net(torch.randn(1,1,16000).cuda()))
+    # summary(net, (1,16000))
+    print(net(torch.randn(1,1,16000).cuda()).shape)
     
