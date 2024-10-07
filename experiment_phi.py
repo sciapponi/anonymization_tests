@@ -57,7 +57,7 @@ class ExperimentPhi(L.LightningModule):
 
         # VALIDATION OUTPUTS
         self.si_sdr = SISDR()
-        self.snr = SISNR()
+        self.si_snr = SISNR()
         self.validation_step_outputs = self.reset_valid_outputs()
 
         # self.ce_loss = nn.CrossEntropyLoss()
@@ -205,7 +205,7 @@ class ExperimentPhi(L.LightningModule):
 
         # DISTILL LOSS
         self.validation_step_outputs['si_sdr'].append(self.si_sdr(batch,out))
-        self.validation_step_outputs['snr'].append(self.snr(batch,out))
+        self.validation_step_outputs['snr'].append(self.si_snr(batch,out))
         #AUDIO
         self.validation_step_outputs["input"].append(batch)
         self.validation_step_outputs["output"].append(out)
