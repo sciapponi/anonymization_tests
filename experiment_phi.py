@@ -8,12 +8,13 @@ import torch.nn.functional as F
 from itertools import chain
 import wandb
 from discriminators import WaveDiscriminator, STFTDiscriminator
-from losses import ReconstructionLoss#, XVectorLoss
+from losses import ReconstructionLoss, ReconstructionLoss2#, XVectorLoss
 # from torchmetrics.audio.pesq import PerceptualEvaluationSpeechQuality
 from pesq import pesq
 from model import SoundPhi
 from torchmetrics.audio import ScaleInvariantSignalDistortionRatio as SISDR
 from torchmetrics.audio import  ScaleInvariantSignalNoiseRatio as SISNR
+import hydra
 
 torch.set_float32_matmul_precision('medium')
 
@@ -25,42 +26,38 @@ torch.set_float32_matmul_precision('medium')
 class ExperimentPhi(L.LightningModule):
 
     def __init__(self, 
-                 use_pretrained = False,
-                 batch_size:int = 16,
-                 sample_rate: int = 16000,
-                 segment_length: int = 48000,
-                 latent_space_dim = 64,
-                 lr: float = 1e-4,
-                 b1: float = 0.5,
-                 b2: float = 0.9,):
+                 args,):
         
         super().__init__()
-        self.save_hyperparameters()
+
+        self.args=args
+        self.dataset_args = args.dataset_args
+        
         self.automatic_optimization = False
 
-        self.model = SoundPhi(latent_space_dim=latent_space_dim,
+        self.model = SoundPhi(latent_space_dim=args.model.latent_space_dim,
                               n_q=16,
                               codebook_size=1024)
         
 
         # DISCRIMINATORS
-        self.wave_discriminators = nn.ModuleList([
-            WaveDiscriminator(resolution=1),
-            WaveDiscriminator(resolution=2),
-            WaveDiscriminator(resolution=4)
-        ])
-        self.rec_loss = ReconstructionLoss()
-        self.stft_discriminator = STFTDiscriminator()
-
-        # self.x_vector_loss = XVectorLoss()
-        #PESQ
-
+        if args.losses.discriminators:
+            self.wave_discriminators = nn.ModuleList([
+                WaveDiscriminator(resolution=1),
+                WaveDiscriminator(resolution=2),
+                WaveDiscriminator(resolution=4)
+            ])
+            self.stft_discriminator = STFTDiscriminator()
+        
+        if args.losses.reconstruction:
+            self.rec_loss = ReconstructionLoss()
+            # self.rec_loss = ReconstructionLoss2(args.sample_rate)
+        
         # VALIDATION OUTPUTS
         self.si_sdr = SISDR()
         self.si_snr = SISNR()
         self.validation_step_outputs = self.reset_valid_outputs()
 
-        # self.ce_loss = nn.CrossEntropyLoss()
 
     def reset_valid_outputs(self):
         return {"pesq": [], 
@@ -72,23 +69,27 @@ class ExperimentPhi(L.LightningModule):
     
     # OPTIMIZERS
     def configure_optimizers(self):
-        lr = self.hparams.lr
-        b1 = self.hparams.b1
-        b2 = self.hparams.b2
+        lr = self.args.optimizers.lr
+        b1 = self.args.optimizers.b1
+        b2 = self.args.optimizers.b2
 
         optimizer_g = torch.optim.Adam(
             chain(
                 self.model.parameters(),
             ),
             lr=lr, betas=(b1, b2))
-        optimizer_d = torch.optim.Adam(
-            chain(
-                self.wave_discriminators.parameters(),
-                self.stft_discriminator.parameters()
-            ),
-            lr=lr, betas=(b1, b2))
         
-        return [optimizer_g, optimizer_d], []
+        if self.args.losses.discriminators:
+            optimizer_d = torch.optim.Adam(
+                chain(
+                    self.wave_discriminators.parameters(),
+                    self.stft_discriminator.parameters()
+                ),
+                lr=lr, betas=(b1, b2))
+            return [optimizer_g, optimizer_d], []
+        
+        return [optimizer_g], []
+        
     
     def generate(self, audio_input):
         with torch.no_grad():
@@ -154,39 +155,89 @@ class ExperimentPhi(L.LightningModule):
         return d_loss
     
     def training_step(self, batch, batch_idx):
-
-        optimizer_g, optimizer_d = self.optimizers()
-
-        ## GENERATOR STEP 
-        self.toggle_optimizer(optimizer_g)
         
-        ### ENCODER STEP
-        audio_output = self(batch)
+        # GAN TRAINING:
+        if self.args.losses.discriminators:
+            optimizer_g, optimizer_d = self.optimizers()
+
+            ## GENERATOR STEP 
+            self.toggle_optimizer(optimizer_g)
+            
+            ### ENCODER STEP
+            audio_output = self(batch)
+            
+            g_loss = self.train_generator(batch, audio_output)
+
+            # SI LOSSES
+            if self.args.losses.sisdr:
+                sdr_loss = self.si_sdr(batch, audio_output)
+                self.log("sdr_loss", sdr_loss)
+            else:
+                sdr_loss = 0
+
+            if self.args.losses.sisnr:
+                snr_loss = self.si_snr(batch, audio_output)
+                self.log("snr_loss", snr_loss)
+            else:
+                snr_loss = 0
+            # TOTAL LOSS
+            loss = g_loss - sdr_loss - snr_loss #- e_xvector_loss
+
+            self.log("train/encoder_loss", loss)
+
+            self.manual_backward(loss)
+            optimizer_g.step()
+            optimizer_g.zero_grad()
+            
+            self.untoggle_optimizer(optimizer_g)
+
+            ## DISCRIMINATOR STEP
+            self.toggle_optimizer(optimizer_d)
+            audio_output = self(batch)
+            d_loss = self.train_discriminator(batch, audio_output)
+            self.manual_backward(d_loss)
+            optimizer_d.step()
+            optimizer_d.zero_grad()
+            self.untoggle_optimizer(optimizer_d)
         
-        g_loss = self.train_generator(batch, audio_output)
+        # STANDARD TRAINING
+        else:
+            optimizer_g = self.optimizers()
 
-        #e_xvector_loss = self.x_vector_loss(batch, audio_output)
-        sdr_loss = self.si_sdr(batch, audio_output)
-        snr_loss = self.si_snr(batch, audio_output)
+            self.toggle_optimizer(optimizer_g)
+            
+            audio_output = self(batch)
+            
+            # REC LOSS
+            if self.args.losses.reconstruction:
+                g_rec_loss = self.rec_loss(audio_output[:, 0, :], batch[:, 0, :])
+                self.log("g_rec_loss", g_rec_loss)
+            else:
+                g_rec_loss = 0
 
-        loss = g_loss - sdr_loss - snr_loss #- e_xvector_loss
+            # SI LOSSES
+            if self.args.losses.sisdr:
+                sdr_loss = self.si_sdr(batch, audio_output)
+                self.log("sdr_loss", sdr_loss)
+            else:
+                sdr_loss = 0
 
-        self.log("train/encoder_loss", loss)
+            
+            if self.args.losses.sisnr:
+                snr_loss = self.si_snr(batch, audio_output)
+                self.log("snr_loss", snr_loss)
+            else:
+                snr_loss = 0
+            # TOTAL LOSS
+            loss = g_rec_loss - sdr_loss - snr_loss
 
-        self.manual_backward(loss)
-        optimizer_g.step()
-        optimizer_g.zero_grad()
-        
-        self.untoggle_optimizer(optimizer_g)
+            self.log("train/encoder_loss", loss, prog_bar=True)
 
-        ## DISCRIMINATOR STEP
-        self.toggle_optimizer(optimizer_d)
-        audio_output = self(batch)
-        d_loss = self.train_discriminator(batch, audio_output)
-        self.manual_backward(d_loss)
-        optimizer_d.step()
-        optimizer_d.zero_grad()
-        self.untoggle_optimizer(optimizer_d)
+            self.manual_backward(loss)
+            optimizer_g.step()
+            optimizer_g.zero_grad()
+            
+            self.untoggle_optimizer(optimizer_g)
 
     # VALIDATION
     def validation_step(self, batch, batch_idx ):
@@ -211,10 +262,11 @@ class ExperimentPhi(L.LightningModule):
         self.validation_step_outputs["output"].append(out)
 
     def on_validation_epoch_end(self):
-        audio_in =  self.validation_step_outputs["input"][0][0]
-        audio_out =  self.validation_step_outputs["output"][0][0]
-        self.logger.experiment.log({"Input Waveform": wandb.Audio(audio_in.squeeze().cpu().numpy(), sample_rate=16000)})
-        self.logger.experiment.log({"Output Waveform": wandb.Audio(audio_out.squeeze().cpu().numpy(), sample_rate=16000)})
+        if self.logger == "wandb":
+            audio_in =  self.validation_step_outputs["input"][0][0]
+            audio_out =  self.validation_step_outputs["output"][0][0]
+            self.logger.experiment.log({"Input Waveform": wandb.Audio(audio_in.squeeze().cpu().numpy(), sample_rate=16000)})
+            self.logger.experiment.log({"Output Waveform": wandb.Audio(audio_out.squeeze().cpu().numpy(), sample_rate=16000)})
 
         # self.log("val/x_vector_loss", torch.Tensor(self.validation_step_outputs["x_vector_loss"]).mean())
         # self.log("val/kd_loss", torch.Tensor(self.validation_step_outputs["kd_loss"]).mean())
@@ -234,7 +286,8 @@ class ExperimentPhi(L.LightningModule):
 
     def val_dataloader(self):
         return self._make_dataloader(False)
-    
+        # return []
+
     def _make_dataloader(self, train: bool):
         import torchaudio
 
@@ -265,18 +318,18 @@ class ExperimentPhi(L.LightningModule):
 
             def __len__(self):
                 return len(self._dataset)
-                # return 100
+                # return 4
 
         if train:
-            ds = torchaudio.datasets.LIBRITTS("/workspace/datasets/audio", url="train-clean-360", download=True)
+            ds = torchaudio.datasets.LIBRITTS(self.dataset_args.base_path, url=self.dataset_args.train, download=self.dataset_args.download)
         else:
-            ds = torchaudio.datasets.LIBRITTS("/workspace/datasets/audio", url="test-clean", download=True)
+            ds = torchaudio.datasets.LIBRITTS(self.dataset_args.base_path, url=self.dataset_args.test, download=self.dataset_args.download)
 
-        ds = VoiceDataset(ds, self.hparams.sample_rate, self.hparams.segment_length)
+        ds = VoiceDataset(ds, self.args.sample_rate, self.dataset_args.segment_length)
         
         
         loader = torch.utils.data.DataLoader(
-            ds, batch_size=self.hparams.batch_size, shuffle=train,
+            ds, batch_size=self.args.batch_size, shuffle=train,
             collate_fn=collate, num_workers=20, pin_memory=True, persistent_workers=True)
         return loader
     
@@ -284,11 +337,16 @@ class ExperimentPhi(L.LightningModule):
     def configure_callbacks(self):
         pass
 
+@hydra.main(version_base=None, config_path='config', config_name='base')
+def train(args):
 
-def train(artifact_url=None):
+    artifact_url = args.wandb.artifact_url
+
     #ddp = DDPStrategy( find_unused_parameters=True)
-    logger = WandbLogger(log_model="all", project='soundphi', name="train_01")
-    # logger = CSVLogger("logs", name="exp_1")
+    if args.logger=="wandb":
+        logger = WandbLogger(log_model="all", project='soundphi', name="train_01")
+    else:
+        logger = CSVLogger("logs", name="exp_1")
 
     if artifact_url != None:
         wandb.init(project="soundphi")  
@@ -297,13 +355,13 @@ def train(artifact_url=None):
         artifact_dir = artifact.download()  
         model = ExperimentPhi.load_from_checkpoint(f"{artifact_dir}/model.ckpt")
     else:
-        model = ExperimentPhi()
+        model = ExperimentPhi(args=args)
         
     trainer = Trainer(logger=logger,
-                      devices=1,
+                      devices=args.trainer.devices,
                       #strategy=ddp,
-                      accelerator='gpu',
-                      max_steps=2000000)
+                      accelerator=args.trainer.accelerator,
+                      max_steps=args.trainer.max_steps)
 
     
 

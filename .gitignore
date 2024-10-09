@@ -8,3 +8,7 @@ lightning_logs
 *.wav
 logs
 artifacts
+config/desktop.yaml
+outputs
+csv
+plots.ipynb
