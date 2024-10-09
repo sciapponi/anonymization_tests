@@ -1,0 +1,40 @@
+use_pretrained: False
+batch_size: 16
+sample_rate: 16000
+
+model:
+  n_q: 16
+  codebook_size: 1024
+  latent_space_dim: 64
+
+dataset_args:
+  base_path: "/workspace/datasets/audios"
+  train: "train-clean-360"
+  test: "test-clean"
+  download: True
+  segment_length: 48000
+  
+
+optimizers:
+  lr: 1e-4
+  b1: 0.5
+  b2: 0.9
+
+losses: 
+  discriminators: True
+  sisdr: True
+  sisnr: True
+  reconstruction: True
+
+
+# TRAINING ARGS
+
+wandb:
+  artifact_url: null
+
+logger: csv
+
+trainer:
+  max_steps: 2000000
+  accelerator: gpu
+  devices: 1
